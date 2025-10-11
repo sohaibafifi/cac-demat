@@ -1,0 +1,76 @@
+<?php
+
+namespace App\Services\Pdf;
+
+use App\Support\Security\PasswordGenerator;
+use Illuminate\Support\Facades\File;
+use RuntimeException;
+use Symfony\Component\Process\Process;
+
+class PdfRestrictionService
+{
+    public function __construct(
+        protected QpdfCommandResolver $commandResolver,
+        protected PasswordGenerator $passwordGenerator
+    ) {
+    }
+
+    public function restrict(string $inputPath, string $outputPath, string $password, ?callable $logger = null): void
+    {
+        $resolvedInput = realpath($inputPath);
+        if ($resolvedInput === false || ! is_file($resolvedInput)) {
+            throw new RuntimeException(sprintf('Fichier PDF introuvable: %s', $inputPath));
+        }
+
+        $directory = dirname($outputPath);
+        if (! is_dir($directory)) {
+            File::makeDirectory($directory, 0755, true, true);
+        }
+
+        $command = $this->commandResolver->resolve();
+
+        $process = new Process([
+            $command,
+            '--encrypt',
+            '',
+            $password,
+            '256',
+            '--print=none',
+            '--extract=n',
+            '--modify=none',
+            '--',
+            $resolvedInput,
+            $outputPath,
+        ]);
+        $process->setTimeout(null);
+        $process->run(function ($type, $buffer) use ($logger) {
+            $this->streamOutput($logger, $buffer);
+        });
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException(trim($process->getErrorOutput() ?: $process->getOutput()));
+        }
+
+    }
+
+    protected function streamOutput(?callable $logger, string $buffer): void
+    {
+        if (! $logger) {
+            return;
+        }
+
+        $lines = preg_split("/\r?\n/", trim($buffer));
+        foreach ($lines as $line) {
+            if ($line !== '') {
+                $logger('[qpdf] '.$line);
+            }
+        }
+    }
+
+    protected function log(?callable $logger, string $message): void
+    {
+        if ($logger) {
+            $logger($message);
+        }
+    }
+}
