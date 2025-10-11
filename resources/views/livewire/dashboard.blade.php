@@ -63,12 +63,8 @@
                             </div>
                             <div class="list-body" data-collapsed="{{ $reviewerListOpen ? 'false' : 'true' }}">
                                 <ul class="list-panel">
-                                    @php
-                                        $combinedReviewers = collect($reviewersFromCsv)->map(fn ($assignment) => array_merge($assignment, ['manual' => false]))
-                                            ->merge(collect($reviewersManual)->map(fn ($assignment, $index) => array_merge($assignment, ['manual' => true, 'index' => $index])));
-                                    @endphp
-                                    @forelse ($combinedReviewers as $assignment)
-                                        <li>
+                                    @forelse ($this->displayReviewers as $assignment)
+                                        <li class="{{ $assignment['missing'] ? 'list-item-warning' : '' }}">
                                             <div class="item-row">
                                                 <div class="item-meta">
                                                     <span class="item-title">{{ $assignment['file'] }}</span>
@@ -79,6 +75,9 @@
                                                 @endif
                                             </div>
                                             <span class="item-sub">{{ collect($assignment['reviewers'] ?? [])->join(', ') ?: '—' }}</span>
+                                            @if ($assignment['missing'])
+                                                <span class="item-warning">⚠️ Fichier introuvable dans le dossier sélectionné.</span>
+                                            @endif
                                         </li>
                                     @empty
                                         <li class="empty">Aucune attribution disponible.</li>

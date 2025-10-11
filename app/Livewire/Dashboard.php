@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 use Illuminate\Support\Str;
 
@@ -23,6 +24,7 @@ class Dashboard extends Component
     public array $membersFromCsv = [];
     public array $membersManual = [];
     public array $fileEntries = [];
+    public array $missingReviewerFiles = [];
     public string $log = "Prêt.";
     public string $status = 'En attente';
     public bool $running = false;
@@ -69,6 +71,47 @@ class Dashboard extends Component
         return ! $this->running
             && ! empty($this->folder)
             && $this->combinedMembers() !== [];
+    }
+
+    public function getDisplayReviewersProperty(): array
+    {
+        $missingLookup = array_map('strtolower', $this->missingReviewerFiles);
+
+        $isMissing = static function (string $file) use ($missingLookup): bool {
+            if ($file === '') {
+                return false;
+            }
+
+            return in_array(strtolower($file), $missingLookup, true);
+        };
+
+        $fromCsv = collect($this->reviewersFromCsv)
+            ->map(function ($assignment) use ($isMissing) {
+                $file = trim((string) ($assignment['file'] ?? ''));
+
+                return array_merge($assignment, [
+                    'manual' => false,
+                    'missing' => $isMissing($file),
+                ]);
+            });
+
+        $fromManual = collect($this->reviewersManual)
+            ->map(function ($assignment, $index) use ($isMissing) {
+                $file = trim((string) ($assignment['file'] ?? ''));
+
+                return array_merge($assignment, [
+                    'manual' => true,
+                    'index' => $index,
+                    'missing' => $isMissing($file),
+                ]);
+            });
+
+        $all =  $fromCsv
+            ->merge($fromManual)
+            ->values()
+            ->all();
+
+        return $all;
     }
 
     public function updatedAssignmentTab(string $value): void
@@ -303,6 +346,10 @@ class Dashboard extends Component
                 && Str::of($entry['name'] ?? '')->lower()->endsWith('.pdf'))
             ->values()
             ->all();
+
+        if ($this->reviewersFromCsv !== []) {
+            $this->checkReviewerFileWarnings(false);
+        }
     }
 
     protected function combinedReviewers(): array
@@ -329,12 +376,16 @@ class Dashboard extends Component
         $this->log = trim($this->log."\n".$message);
     }
 
-    protected function checkReviewerFileWarnings(): void
+    protected function checkReviewerFileWarnings(bool $shouldLog = true): void
     {
         $missing = $this->workspace->findMissingFiles($this->reviewersFromCsv, $this->availableFiles);
 
-        foreach ($missing as $file) {
-            $this->appendLog("⚠️ Fichier introuvable dans le dossier: {$file}");
+        if ($shouldLog) {
+            foreach ($missing as $file) {
+                $this->appendLog("⚠️ Fichier introuvable : {$file}");
+            }
         }
+
+        $this->missingReviewerFiles = $missing;
     }
 }

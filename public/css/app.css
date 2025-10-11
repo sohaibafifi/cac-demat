@@ -251,6 +251,18 @@ body {
     color: var(--text-muted);
 }
 
+.list-panel li.list-item-warning {
+    --text-muted: var(--danger);
+    background: rgba(254, 202, 202, 0.15);
+}
+
+.list-panel .item-warning {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--danger);
+}
+
 .item-row {
     display: flex;
     align-items: center;
