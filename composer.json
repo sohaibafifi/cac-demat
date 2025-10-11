@@ -1,11 +1,13 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "",
+    "name": "univ-artois/cac-demat",
     "type": "project",
-    "description": "The official Laravel starter kit for Livewire.",
+    "description": "Une application de dématérialisation des CAC",
     "keywords": [
         "laravel",
-        "framework"
+        "framework",
+        "nativephp",
+        "Université d'Artois"
     ],
     "license": "MIT",
     "require": {
