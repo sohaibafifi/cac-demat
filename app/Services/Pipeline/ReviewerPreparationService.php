@@ -2,25 +2,22 @@
 
 namespace App\Services\Pipeline;
 
-use App\Services\Pdf\PdfRestrictionService;
 use App\Services\Pdf\QpdfCommandResolver;
-use App\Services\Pdf\WatermarkService;
-use App\Support\Security\PasswordGenerator;
-use App\Support\Text\NameSanitizer;
-use RuntimeException;
 use Illuminate\Support\Facades\File;
+use RuntimeException;
 
 class ReviewerPreparationService
 {
     public function __construct(
         protected QpdfCommandResolver $commandResolver,
-        protected WatermarkService $watermarkService,
-        protected PdfRestrictionService $restrictionService,
-        protected PasswordGenerator $passwordGenerator
+        protected PdfPackageProcessor $packageProcessor
     ) {
     }
 
-    public function prepare(array $assignments, string $sourceDir, string $outputDir, bool $restrict = true, ?callable $logger = null): void
+    /**
+     * @param array<int, array{name: string, files: array<int, string>}> $packages
+     */
+    public function prepare(array $packages, string $sourceDir, string $outputDir, bool $restrict = true, ?callable $logger = null): void
     {
         $command = $this->commandResolver->resolve();
         $this->log($logger, sprintf('[qpdf] Using command: %s', $command));
@@ -32,65 +29,49 @@ class ReviewerPreparationService
 
         File::makeDirectory($outputDir, 0755, true, true);
 
-        foreach ($assignments as $assignment) {
-            $file = trim((string) ($assignment['file'] ?? ''));
-            if ($file === '') {
+        $inventory = $this->packageProcessor->collectPdfFiles($resolvedSourceDir);
+
+        $normalisedPackages = [];
+        foreach ($packages as $package) {
+            $name = trim((string) ($package['name'] ?? ''));
+            if ($name === '') {
                 continue;
             }
 
-            $reviewers = collect($assignment['reviewers'] ?? [])
-                ->map(fn ($name) => trim((string) $name))
-                ->filter()
-                ->values();
+            $files = array_map(static fn ($file) => trim((string) $file), $package['files'] ?? []);
+            $files = array_values(array_filter($files, static fn ($file) => $file !== ''));
 
-            if ($reviewers->isEmpty()) {
+            if ($files === []) {
                 continue;
             }
 
-            $sourcePath = $this->joinPath($resolvedSourceDir, $file);
-            if (! is_file($sourcePath)) {
-                $message = sprintf('Warning: Source file %s not found. Skipping.', $sourcePath);
-                $this->log($logger, $message);
-                continue;
-            }
-
-            foreach ($reviewers as $reviewer) {
-                $this->processReviewer($reviewer, $file, $sourcePath, $outputDir, $restrict, $logger);
-            }
+            $normalisedPackages[] = [
+                'name' => $name,
+                'files' => $files,
+            ];
         }
-    }
 
-    protected function processReviewer(string $reviewer, string $relativeFile, string $sourcePath, string $outputDir, bool $restrict, ?callable $logger): void
-    {
-        $folderName = NameSanitizer::sanitize($reviewer, 'reviewer');
-        $reviewerDir = $outputDir.'/'.$folderName;
-        File::makeDirectory($reviewerDir, 0755, true, true);
-
-        $relativeDir = trim(str_replace('\\', '/', dirname($relativeFile)), '/');
-        $targetDir = $relativeDir === '' ? $reviewerDir : $reviewerDir.'/'.$relativeDir;
-        File::makeDirectory($targetDir, 0755, true, true);
-
-        $baseName = basename($relativeFile);
-        $watermarkedPath = $targetDir.'/watermarked_'.$baseName;
-        $finalPath = $targetDir.'/'.$baseName;
-
-        $this->watermarkService->applyWatermark($sourcePath, $watermarkedPath, $reviewer);
-
-        if ($restrict) {
-            $password = $this->passwordGenerator->generate(12);
-            $this->restrictionService->restrict($watermarkedPath, $finalPath, $password, $logger);
-            @unlink($watermarkedPath);
-            $this->log($logger, sprintf('Processed %s for %s (owner password: %s)', $relativeFile, $reviewer, $password));
-        } else {
-            File::move($watermarkedPath, $finalPath);
-            $this->log($logger, sprintf('Processed %s for %s without restrictions.', $relativeFile, $reviewer));
+        if ($normalisedPackages === []) {
+            return;
         }
-    }
 
-    protected function joinPath(string $base, string $relative): string
-    {
-        $normalised = str_replace('\\', '/', $relative);
-        return rtrim($base, '/').'/'.ltrim($normalised, '/');
+        $this->packageProcessor->prepare(
+            $normalisedPackages,
+            $resolvedSourceDir,
+            $outputDir,
+            'reviewer',
+            $restrict,
+            $logger,
+            $inventory,
+            function (array $file, string $recipient, bool $restricted, ?string $password) use ($logger): void {
+                if ($restricted) {
+                    $this->log($logger, sprintf('Processed %s for %s (owner password: %s)', $file['relative'], $recipient, $password));
+                    return;
+                }
+
+                $this->log($logger, sprintf('Processed %s for %s without restrictions.', $file['relative'], $recipient));
+            }
+        );
     }
 
     protected function log(?callable $logger, string $message): void
@@ -99,6 +80,5 @@ class ReviewerPreparationService
             $logger($message);
         }
     }
-
 
 }

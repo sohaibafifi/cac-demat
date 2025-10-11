@@ -63,21 +63,37 @@
                             </div>
                             <div class="list-body" data-collapsed="{{ $reviewerListOpen ? 'false' : 'true' }}">
                                 <ul class="list-panel">
-                                    @forelse ($this->displayReviewers as $assignment)
-                                        <li class="{{ $assignment['missing'] ? 'list-item-warning' : '' }}">
+                                    @forelse ($this->reviewerSummaries as $reviewer)
+                                        @php
+                                            $badgeClass = $reviewer['has_manual'] && $reviewer['has_csv']
+                                                ? 'badge-mixed'
+                                                : ($reviewer['has_manual'] ? 'badge-manual' : '');
+                                            $badgeLabel = $reviewer['has_manual'] && $reviewer['has_csv']
+                                                ? 'Mixte'
+                                                : ($reviewer['has_manual'] ? 'Manuel' : 'CSV');
+                                        @endphp
+                                        <li class="{{ $reviewer['has_missing'] ? 'list-item-warning' : '' }}">
                                             <div class="item-row">
                                                 <div class="item-meta">
-                                                    <span class="item-title">{{ $assignment['file'] }}</span>
-                                                    <span class="item-badge {{ $assignment['manual'] ? 'badge-manual' : '' }}">{{ $assignment['manual'] ? 'Manuel' : 'CSV' }}</span>
+                                                    <span class="item-title">{{ $reviewer['name'] }}</span>
+                                                    <span class="item-badge {{ $badgeClass }}">{{ $badgeLabel }}</span>
                                                 </div>
-                                                @if ($assignment['manual'])
-                                                    <button type="button" class="item-remove" wire:click="removeManualReviewer({{ $assignment['index'] }})">✖</button>
-                                                @endif
                                             </div>
-                                            <span class="item-sub">{{ collect($assignment['reviewers'] ?? [])->join(', ') ?: '—' }}</span>
-                                            @if ($assignment['missing'])
-                                                <span class="item-warning">⚠️ Fichier introuvable dans le dossier sélectionné.</span>
-                                            @endif
+                                            <div class="item-files">
+                                                @foreach ($reviewer['files'] as $file)
+                                                    <div class="item-file {{ $file['missing'] ? 'is-missing' : '' }}">
+                                                        <div class="item-file-header">
+                                                            <span class="item-file-name">{{ $file['name'] }}</span>
+                                                            @if ($file['manual'] && $file['manual_index'] !== null)
+                                                                <button type="button" class="item-remove" wire:click="removeManualReviewer({{ $file['manual_index'] }})">✖</button>
+                                                            @endif
+                                                        </div>
+                                                        @if ($file['missing'])
+                                                            <span class="item-warning">⚠️ Fichier introuvable dans le dossier sélectionné.</span>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
                                         </li>
                                     @empty
                                         <li class="empty">Aucune attribution disponible.</li>

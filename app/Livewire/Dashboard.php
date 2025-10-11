@@ -63,7 +63,7 @@ class Dashboard extends Component
     {
         return ! $this->running
             && ! empty($this->folder)
-            && $this->combinedReviewers() !== [];
+            && $this->reviewerPackages() !== [];
     }
 
     public function getCanRunMembersProperty(): bool
@@ -73,45 +73,103 @@ class Dashboard extends Component
             && $this->combinedMembers() !== [];
     }
 
-    public function getDisplayReviewersProperty(): array
+    public function getReviewerSummariesProperty(): array
     {
         $missingLookup = array_map('strtolower', $this->missingReviewerFiles);
+        $grouped = [];
 
-        $isMissing = static function (string $file) use ($missingLookup): bool {
-            if ($file === '') {
-                return false;
+        $appendAssignment = static function (
+            array &$group,
+            string $reviewer,
+            string $file,
+            string $source,
+            ?int $manualIndex,
+            array $missingLookup
+        ): void {
+            $reviewerName = trim($reviewer);
+            if ($reviewerName === '' || $file === '') {
+                return;
             }
 
-            return in_array(strtolower($file), $missingLookup, true);
+            $normalisedReviewer = strtolower($reviewerName);
+
+            if (! isset($group[$normalisedReviewer])) {
+                $group[$normalisedReviewer] = [
+                    'name' => $reviewerName,
+                    'files' => [],
+                    'has_manual' => false,
+                    'has_csv' => false,
+                    'has_missing' => false,
+                ];
+            }
+
+            $isMissing = in_array(strtolower($file), $missingLookup, true);
+
+            $group[$normalisedReviewer]['files'][] = [
+                'name' => $file,
+                'missing' => $isMissing,
+                'manual' => $source === 'manual',
+                'manual_index' => $manualIndex,
+                'source' => $source,
+            ];
+
+            if ($source === 'manual') {
+                $group[$normalisedReviewer]['has_manual'] = true;
+            }
+
+            if ($source === 'csv') {
+                $group[$normalisedReviewer]['has_csv'] = true;
+            }
+
+            if ($isMissing) {
+                $group[$normalisedReviewer]['has_missing'] = true;
+            }
         };
 
-        $fromCsv = collect($this->reviewersFromCsv)
-            ->map(function ($assignment) use ($isMissing) {
-                $file = trim((string) ($assignment['file'] ?? ''));
+        foreach ($this->reviewersFromCsv as $assignment) {
+            $file = trim((string) ($assignment['file'] ?? ''));
 
-                return array_merge($assignment, [
-                    'manual' => false,
-                    'missing' => $isMissing($file),
-                ]);
-            });
+            $reviewers = collect($assignment['reviewers'] ?? [])
+                ->map(fn ($name) => trim((string) $name))
+                ->filter()
+                ->values();
 
-        $fromManual = collect($this->reviewersManual)
-            ->map(function ($assignment, $index) use ($isMissing) {
-                $file = trim((string) ($assignment['file'] ?? ''));
+            if ($file === '' || $reviewers->isEmpty()) {
+                continue;
+            }
 
-                return array_merge($assignment, [
-                    'manual' => true,
-                    'index' => $index,
-                    'missing' => $isMissing($file),
-                ]);
-            });
+            foreach ($reviewers as $reviewer) {
+                $appendAssignment($grouped, $reviewer, $file, 'csv', null, $missingLookup);
+            }
+        }
 
-        $all =  $fromCsv
-            ->merge($fromManual)
-            ->values()
-            ->all();
+        foreach ($this->reviewersManual as $index => $assignment) {
+            $file = trim((string) ($assignment['file'] ?? ''));
 
-        return $all;
+            $reviewers = collect($assignment['reviewers'] ?? [])
+                ->map(fn ($name) => trim((string) $name))
+                ->filter()
+                ->values();
+
+            if ($file === '' || $reviewers->isEmpty()) {
+                continue;
+            }
+
+            foreach ($reviewers as $reviewer) {
+                $appendAssignment($grouped, $reviewer, $file, 'manual', $index, $missingLookup);
+            }
+        }
+
+        $summaries = array_values($grouped);
+
+        usort($summaries, static fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+
+        foreach ($summaries as &$summary) {
+            usort($summary['files'], static fn ($a, $b) => strcmp($a['name'], $b['name']));
+        }
+        unset($summary);
+
+        return $summaries;
     }
 
     public function updatedAssignmentTab(string $value): void
@@ -204,6 +262,8 @@ class Dashboard extends Component
             $this->availableFiles[] = $file;
             sort($this->availableFiles);
         }
+
+        $this->checkReviewerFileWarnings(false);
     }
 
     public function removeManualReviewer(int $index): void
@@ -215,6 +275,8 @@ class Dashboard extends Component
         unset($this->reviewersManual[$index]);
         $this->reviewersManual = array_values($this->reviewersManual);
         $this->appendLog("Attribution manuelle supprimée: {$removed['file']}");
+
+        $this->checkReviewerFileWarnings(false);
     }
 
     public function addManualMember(): void
@@ -293,7 +355,7 @@ class Dashboard extends Component
             }
 
             if ($mode === 'reviewers') {
-                if ($this->combinedReviewers() === []) {
+                if ($this->reviewerPackages() === []) {
                     throw new RuntimeException('Aucune attribution de rapporteur disponible.');
                 }
             } else {
@@ -310,11 +372,11 @@ class Dashboard extends Component
             };
 
             if ($mode === 'reviewers') {
-                $assignments = $this->combinedReviewers();
+                $packages = $this->reviewerPackages();
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'rapporteurs');
 
                 $this->appendLog('Préparation des packages rapporteurs...');
-                $this->reviewerService->prepare($assignments, $this->folder, $outputDir, true, $logger);
+                $this->reviewerService->prepare($packages, $this->folder, $outputDir, true, $logger);
             } else {
                 $entries = $this->combinedMembers();
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'membres');
@@ -347,17 +409,35 @@ class Dashboard extends Component
             ->values()
             ->all();
 
-        if ($this->reviewersFromCsv !== []) {
+        if ($this->reviewersFromCsv !== [] || $this->reviewersManual !== []) {
             $this->checkReviewerFileWarnings(false);
         }
     }
 
-    protected function combinedReviewers(): array
+    protected function reviewerPackages(): array
     {
-        return collect(array_merge($this->reviewersFromCsv, $this->reviewersManual))
-            ->filter(fn ($assignment) => isset($assignment['file'], $assignment['reviewers']) &&
-                trim((string) $assignment['file']) !== '' &&
-                collect($assignment['reviewers'])->filter(fn ($name) => trim((string) $name) !== '')->isNotEmpty())
+        return collect($this->reviewerSummaries)
+            ->map(function ($summary) {
+                $name = trim((string) ($summary['name'] ?? ''));
+
+                $files = collect($summary['files'] ?? [])
+                    ->pluck('name')
+                    ->map(fn ($file) => trim((string) $file))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if ($name === '' || $files === []) {
+                    return null;
+                }
+
+                return [
+                    'name' => $name,
+                    'files' => $files,
+                ];
+            })
+            ->filter()
             ->values()
             ->all();
     }
@@ -378,11 +458,12 @@ class Dashboard extends Component
 
     protected function checkReviewerFileWarnings(bool $shouldLog = true): void
     {
-        $missing = $this->workspace->findMissingFiles($this->reviewersFromCsv, $this->availableFiles);
+        $assignments = array_merge($this->reviewersFromCsv, $this->reviewersManual);
+        $missing = $this->workspace->findMissingFiles($assignments, $this->availableFiles);
 
         if ($shouldLog) {
             foreach ($missing as $file) {
-                $this->appendLog("⚠️ Fichier introuvable : {$file}");
+                $this->appendLog("⚠️ Fichier introuvable dans le dossier: {$file}");
             }
         }
 

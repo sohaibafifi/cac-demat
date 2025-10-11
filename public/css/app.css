@@ -293,6 +293,12 @@ body {
     color: var(--success);
 }
 
+.badge-mixed {
+    border-color: rgba(59, 130, 246, 0.45);
+    background: rgba(191, 219, 254, 0.9);
+    color: var(--accent-strong);
+}
+
 .item-remove {
     appearance: none;
     background: rgba(239, 68, 68, 0.12);
@@ -307,6 +313,33 @@ body {
 
 .item-remove:hover {
     background: rgba(239, 68, 68, 0.18);
+}
+
+.item-files {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.item-file {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.item-file-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.item-file.is-missing .item-file-header {
+    color: var(--danger);
+}
+
+.item-file-name {
+    font-weight: 500;
 }
 
 .item-remove:active {
