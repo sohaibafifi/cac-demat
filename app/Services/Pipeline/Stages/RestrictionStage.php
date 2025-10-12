@@ -1,13 +1,16 @@
 <?php
 
-namespace App\Services\Pdf;
+namespace App\Services\Pipeline\Stages;
 
+use App\Services\Pdf\QpdfCommandResolver;
+use App\Services\Pipeline\Contracts\PdfProcessingStage;
+use App\Services\Pipeline\PdfProcessingContext;
 use App\Support\Security\PasswordGenerator;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-class PdfRestrictionService
+class RestrictionStage implements PdfProcessingStage
 {
     public function __construct(
         protected QpdfCommandResolver $commandResolver,
@@ -15,7 +18,28 @@ class PdfRestrictionService
     ) {
     }
 
-    public function restrict(string $inputPath, string $outputPath, string $password, ?callable $logger = null): void
+    public function process(PdfProcessingContext $context, ?callable $logger = null): PdfProcessingContext
+    {
+        $finalPath = $context->targetPath();
+        $password = $this->passwordGenerator->generate(12);
+
+        $this->applyRestrictions($context->workingPath, $finalPath, $password, $logger);
+
+        if ($context->useDefaultLogging) {
+            $this->log($logger, sprintf(
+                'Processed %s for %s (owner password: %s)',
+                $context->relativePath,
+                $context->recipient,
+                $password
+            ));
+        }
+
+        return $context
+            ->withWorkingPath($finalPath, temporary: false)
+            ->withPassword($password);
+    }
+
+    protected function applyRestrictions(string $inputPath, string $outputPath, string $password, ?callable $logger = null): void
     {
         $resolvedInput = realpath($inputPath);
         if ($resolvedInput === false || ! is_file($resolvedInput)) {
@@ -50,7 +74,6 @@ class PdfRestrictionService
         if (! $process->isSuccessful()) {
             throw new RuntimeException(trim($process->getErrorOutput() ?: $process->getOutput()));
         }
-
     }
 
     protected function streamOutput(?callable $logger, string $buffer): void

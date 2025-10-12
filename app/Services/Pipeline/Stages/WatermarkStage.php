@@ -1,21 +1,36 @@
 <?php
 
-namespace App\Services\Pdf;
+namespace App\Services\Pipeline\Stages;
 
+use App\Services\Pdf\QpdfCommandResolver;
+use App\Services\Pipeline\Contracts\PdfProcessingStage;
+use App\Services\Pipeline\PdfProcessingContext;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-class WatermarkService
+class WatermarkStage implements PdfProcessingStage
 {
     public function __construct(
         protected QpdfCommandResolver $commandResolver
     ) {
     }
 
-    public function applyWatermark(string $sourcePath, string $outputPath, string $label): void
+    public function process(PdfProcessingContext $context, ?callable $logger = null): PdfProcessingContext
+    {
+        $output = sys_get_temp_dir().'/cac_demat_watermark_'.Str::uuid().'.pdf';
+        $this->applyWatermark($context->workingPath, $output, $context->recipient);
+
+        if ($context->useDefaultLogging) {
+            $this->log($logger, sprintf('  → %s: watermark %s applied', $context->relativePath, $context->recipient));
+        }
+
+        return $context->withWorkingPath($output);
+    }
+
+    protected function applyWatermark(string $sourcePath, string $outputPath, string $label): void
     {
         $resolvedSource = realpath($sourcePath);
         if ($resolvedSource === false || ! is_file($resolvedSource)) {
@@ -82,8 +97,8 @@ class WatermarkService
         }
 
         $objectStorage = [];
-        $objectStorage[1] = ''; // catalog placeholder
-        $objectStorage[2] = ''; // pages placeholder
+        $objectStorage[1] = '';
+        $objectStorage[2] = '';
         $nextObjectId = 2;
 
         $addObject = function (string $content) use (&$objectStorage, &$nextObjectId): int {
@@ -520,18 +535,27 @@ class WatermarkService
             ));
         }
 
-        File::replace($path, $contents);
+        if (file_put_contents($path, $contents) === false) {
+            @unlink($temporaryOutput);
+
+            throw new RuntimeException(sprintf(
+                'Impossible d\'écrire le PDF optimisé (%s).',
+                $path
+            ));
+        }
+
         @unlink($temporaryOutput);
     }
 
     protected function formatNumber(float $value): string
     {
-        if (abs($value) < 0.0000001) {
-            $value = 0.0;
+        return rtrim(rtrim(sprintf('%.4f', $value), '0'), '.');
+    }
+
+    protected function log(?callable $logger, string $message): void
+    {
+        if ($logger) {
+            $logger($message);
         }
-
-        $formatted = rtrim(rtrim(sprintf('%.6F', $value), '0'), '.');
-
-        return $formatted === '' ? '0' : $formatted;
     }
 }

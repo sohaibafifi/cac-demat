@@ -2,14 +2,12 @@
 
 namespace App\Services\Pipeline;
 
-use App\Services\Pdf\QpdfCommandResolver;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
 class ReviewerPreparationService
 {
     public function __construct(
-        protected QpdfCommandResolver $commandResolver,
         protected PdfPackageProcessor $packageProcessor
     ) {
     }
@@ -17,11 +15,8 @@ class ReviewerPreparationService
     /**
      * @param array<int, array{name: string, files: array<int, string>}> $packages
      */
-    public function prepare(array $packages, string $sourceDir, string $outputDir, bool $restrict = true, ?callable $logger = null): void
+    public function prepare(array $packages, string $sourceDir, string $outputDir, ?callable $logger = null): void
     {
-        $command = $this->commandResolver->resolve();
-        $this->log($logger, sprintf('[qpdf] Using command: %s', $command));
-
         $resolvedSourceDir = realpath($sourceDir);
         if ($resolvedSourceDir === false || ! is_dir($resolvedSourceDir)) {
             throw new RuntimeException(sprintf('Dossier source introuvable: %s', $sourceDir));
@@ -60,16 +55,10 @@ class ReviewerPreparationService
             $resolvedSourceDir,
             $outputDir,
             'reviewer',
-            $restrict,
             $logger,
             $inventory,
             function (array $file, string $recipient, bool $restricted, ?string $password) use ($logger): void {
-                if ($restricted) {
-                    $this->log($logger, sprintf('Processed %s for %s (owner password: %s)', $file['relative'], $recipient, $password));
-                    return;
-                }
-
-                $this->log($logger, sprintf('Processed %s for %s without restrictions.', $file['relative'], $recipient));
+                $this->log($logger, sprintf('Processed %s for %s (owner password: %s)', $file['relative'], $recipient, $password));
             }
         );
     }

@@ -2,18 +2,13 @@
 
 namespace App\Services\Pipeline;
 
-use App\Services\Pdf\PdfRestrictionService;
-use App\Services\Pdf\WatermarkService;
-use App\Support\Security\PasswordGenerator;
 use App\Support\Text\NameSanitizer;
 use Illuminate\Support\Facades\File;
 
 class PdfPackageProcessor
 {
     public function __construct(
-        protected WatermarkService $watermarkService,
-        protected PdfRestrictionService $restrictionService,
-        protected PasswordGenerator $passwordGenerator
+        protected PdfProcessingPipeline $pipeline
     ) {
     }
 
@@ -26,7 +21,6 @@ class PdfPackageProcessor
         string $resolvedSourceDir,
         string $outputDir,
         string $sanitizeContext,
-        bool $restrict = true,
         ?callable $logger = null,
         ?array $inventory = null,
         ?callable $afterFileProcessed = null
@@ -67,33 +61,26 @@ class PdfPackageProcessor
                 $destinationDir = $file['relative_dir'] === '' ? $recipientDir : $recipientDir.'/'.$file['relative_dir'];
                 File::makeDirectory($destinationDir, 0755, true, true);
 
-                $watermarkedPath = $destinationDir.'/watermarked_'.$file['basename'];
-                $finalPath = $destinationDir.'/'.$file['basename'];
+                $context = new PdfProcessingContext(
+                    workingPath: $file['path'],
+                    relativePath: $file['relative'],
+                    recipient: $name,
+                    targetDirectory: $destinationDir,
+                    basename: $file['basename'],
+                    useDefaultLogging: $useDefaultLogging,
+                );
 
-                $this->watermarkService->applyWatermark($file['path'], $watermarkedPath, $name);
+                $result = $this->pipeline->process($context, $logger);
 
-                if ($useDefaultLogging) {
-                    $this->log($logger, sprintf('  → %s: watermark %s applied', $file['relative'], $name));
-                }
-
-                if ($restrict) {
-                    $password = $this->passwordGenerator->generate(12);
-                    $this->restrictionService->restrict($watermarkedPath, $finalPath, $password, $logger);
-                    @unlink($watermarkedPath);
-
-                    if ($afterFileProcessed) {
-                        $afterFileProcessed($file, $name, true, $password);
-                    } else {
-                        $this->log($logger, sprintf('  → %s: restricted (owner password: %s)', $file['relative'], $password));
-                    }
-                } else {
-                    File::move($watermarkedPath, $finalPath);
-
-                    if ($afterFileProcessed) {
-                        $afterFileProcessed($file, $name, false, null);
-                    } else {
-                        $this->log($logger, sprintf('  → %s: watermark applied without restrictions', $file['relative']));
-                    }
+                if ($afterFileProcessed) {
+                    $afterFileProcessed($file, $name, true, $result->password);
+                } elseif (! $useDefaultLogging && $result->password !== null) {
+                    $this->log($logger, sprintf(
+                        'Processed %s for %s (owner password: %s)',
+                        $file['relative'],
+                        $name,
+                        $result->password
+                    ));
                 }
             }
         }

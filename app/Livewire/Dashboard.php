@@ -376,13 +376,13 @@ class Dashboard extends Component
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'rapporteurs');
 
                 $this->appendLog('Préparation des packages rapporteurs...');
-                $this->reviewerService->prepare($packages, $this->folder, $outputDir, true, $logger);
+                $this->reviewerService->prepare($packages, $this->folder, $outputDir, $logger);
             } else {
                 $entries = $this->combinedMembers();
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'membres');
 
                 $this->appendLog('Préparation des packages membres...');
-                $this->memberService->prepare($entries, $this->folder, $outputDir, true, $logger);
+                $this->memberService->prepare($entries, $this->folder, $outputDir, $logger);
             }
 
             $this->status = 'Terminé';
