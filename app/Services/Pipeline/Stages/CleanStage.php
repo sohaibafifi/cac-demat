@@ -11,25 +11,18 @@ use Symfony\Component\Process\Process;
 
 class CleanStage implements PdfProcessingStage
 {
+    protected string $pattern = '/\\b\\d{2}[ -]?[GPAEBSNIKT][ -]?\\d{2}[ -]?\\d{5}[ -]?[A-Z]{3}\\b/';
+    protected string $splitPattern = '/(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*[GPAEBSNIKT]\s*\))'
+    .'(-?\d+(?:\.\d+)?)(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*\d{5}\s*\))'
+    .'(-?\d+(?:\.\d+)?)(\(\s*[A-Z]{3}\s*\))/';
+
     public function __construct(
-        protected string $pattern,
         protected QpdfCommandResolver $commandResolver
     ) {
-        $pattern = trim($pattern);
-
-        if ($pattern === '' || $this->patternIsInvalid($pattern)) {
-            $this->pattern = '';
-        } else {
-            $this->pattern = $pattern;
-        }
     }
 
     public function process(PdfProcessingContext $context, ?callable $logger = null): PdfProcessingContext
     {
-        if ($this->pattern === '') {
-            return $context;
-        }
-
         $qdfPath = $this->convertToQdf($context->workingPath);
 
         if (! $this->sanitizeQdf($qdfPath, $logger)) {
@@ -132,11 +125,7 @@ class CleanStage implements PdfProcessingStage
             return $contents;
         }
 
-        $splitPattern = '/(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*[GPAEBSNIKT]\s*\))'
-            .'(-?\d+(?:\.\d+)?)(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*\d{5}\s*\))'
-            .'(-?\d+(?:\.\d+)?)(\(\s*[A-Z]{3}\s*\))/';
-
-        return preg_replace_callback($splitPattern, function (array $match) use (&$count, $logger) {
+        return preg_replace_callback($this->splitPattern, function (array $match) use (&$count, $logger) {
             $count++;
             $this->log($logger, sprintf(
                 '    → Séquence éclatée masquée: %s%s%s%s%s%s%s%s%s',
@@ -191,15 +180,6 @@ class CleanStage implements PdfProcessingStage
         }
 
         return $rebuiltPath;
-    }
-
-    protected function patternIsInvalid(string $pattern): bool
-    {
-        set_error_handler(static fn () => false);
-        $result = @preg_match($pattern, '');
-        restore_error_handler();
-
-        return $result === false;
     }
 
     protected function log(?callable $logger, string $message): void

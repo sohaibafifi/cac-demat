@@ -20,7 +20,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(PdfProcessingPipeline::class, function ($app) {
             return new PdfProcessingPipeline([
                 new CleanStage(
-                    config('clean.pattern', ''),
                     $app->make(QpdfCommandResolver::class)
                 ),
                 new WatermarkStage($app->make(QpdfCommandResolver::class)),
