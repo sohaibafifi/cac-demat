@@ -31,6 +31,7 @@ class Dashboard extends Component
     public string $manualReviewerFile = '';
     public string $manualReviewerNames = '';
     public string $manualMemberName = '';
+    public string $cacName = '';
     public bool $reviewerListOpen = false;
     public bool $memberListOpen = false;
     public bool $activityCollapsed = true;
@@ -63,14 +64,16 @@ class Dashboard extends Component
     {
         return ! $this->running
             && ! empty($this->folder)
-            && $this->reviewerPackages() !== [];
+            && $this->reviewerPackages() !== []
+            && trim($this->cacName) !== '';
     }
 
     public function getCanRunMembersProperty(): bool
     {
         return ! $this->running
             && ! empty($this->folder)
-            && $this->combinedMembers() !== [];
+            && $this->combinedMembers() !== []
+            && trim($this->cacName) !== '';
     }
 
     public function getReviewerSummariesProperty(): array
@@ -354,6 +357,12 @@ class Dashboard extends Component
                 throw new RuntimeException('Veuillez d\'abord sélectionner un dossier.');
             }
 
+            $collectionName = trim($this->cacName);
+
+            if ($collectionName === '') {
+                throw new RuntimeException('Veuillez saisir le nom du CAC.');
+            }
+
             if ($mode === 'reviewers') {
                 if ($this->reviewerPackages() === []) {
                     throw new RuntimeException('Aucune attribution de rapporteur disponible.');
@@ -376,13 +385,13 @@ class Dashboard extends Component
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'rapporteurs');
 
                 $this->appendLog('Préparation des packages rapporteurs...');
-                $this->reviewerService->prepare($packages, $this->folder, $outputDir, $logger);
+                $this->reviewerService->prepare($packages, $this->folder, $outputDir, $collectionName, $logger);
             } else {
                 $entries = $this->combinedMembers();
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'membres');
 
                 $this->appendLog('Préparation des packages membres...');
-                $this->memberService->prepare($entries, $this->folder, $outputDir, $logger);
+                $this->memberService->prepare($entries, $this->folder, $outputDir, $collectionName, $logger);
             }
 
             $this->status = 'Terminé';

@@ -13,7 +13,7 @@ class MemberPreparationService
     ) {
     }
 
-    public function prepare(array $members, string $sourceDir, string $outputDir, ?callable $logger = null): void
+    public function prepare(array $members, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): void
     {
         $resolvedSourceDir = realpath($sourceDir);
         if ($resolvedSourceDir === false || ! is_dir($resolvedSourceDir)) {
@@ -51,6 +51,7 @@ class MemberPreparationService
             $resolvedSourceDir,
             $outputDir,
             'member',
+            $collectionName,
             $logger,
             $inventory
         );

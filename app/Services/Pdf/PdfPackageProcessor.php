@@ -22,6 +22,7 @@ class PdfPackageProcessor
         string $resolvedSourceDir,
         string $outputDir,
         string $sanitizeContext,
+        string $collectionName = '',
         ?callable $logger = null,
         ?array $inventory = null,
         ?callable $afterFileProcessed = null
@@ -30,6 +31,12 @@ class PdfPackageProcessor
         $lookup = [];
         foreach ($inventory as $entry) {
             $lookup[strtolower($entry['relative'])] = $entry;
+        }
+
+        $collectionFolder = null;
+        $collectionName = trim($collectionName);
+        if ($collectionName !== '') {
+            $collectionFolder = NameSanitizer::sanitize($collectionName, 'collection');
         }
 
         foreach ($packages as $package) {
@@ -41,6 +48,12 @@ class PdfPackageProcessor
             $folderName = NameSanitizer::sanitize($name, $sanitizeContext);
             $recipientDir = $outputDir.'/'.$folderName;
             File::makeDirectory($recipientDir, 0755, true, true);
+
+            $baseDir = $recipientDir;
+            if ($collectionFolder !== null) {
+                $baseDir = $recipientDir.'/'.$collectionFolder;
+                File::makeDirectory($baseDir, 0755, true, true);
+            }
 
             $files = array_map(static fn ($file) => trim((string) $file), $package['files'] ?? []);
             $files = array_values(array_filter($files, static fn ($file) => $file !== ''));
@@ -59,7 +72,7 @@ class PdfPackageProcessor
                 }
 
                 $file = $lookup[$key];
-                $destinationDir = $file['relative_dir'] === '' ? $recipientDir : $recipientDir.'/'.$file['relative_dir'];
+                $destinationDir = $file['relative_dir'] === '' ? $baseDir : $baseDir.'/'.$file['relative_dir'];
                 File::makeDirectory($destinationDir, 0755, true, true);
 
                 $context = new PdfProcessingContext(

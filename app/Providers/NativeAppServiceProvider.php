@@ -16,6 +16,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     {
         Menu::create(
             Menu::app(),
+            Menu::edit(),
             Menu::view()
         );
         Window::open()

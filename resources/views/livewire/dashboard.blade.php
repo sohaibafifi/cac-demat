@@ -6,10 +6,27 @@
 
     <section class="section">
         <article class="control-card">
-            <strong>Dossier de travail</strong>
-            <p class="text-muted">Choisissez le répertoire contenant les PDFs à traiter.</p>
-            <button type="button" class="btn btn-outline" wire:click="pickFolder" @disabled($running)>📁 Sélectionner un dossier</button>
-            <span class="path-chip">{{ $folder ?? 'Aucun dossier sélectionné' }}</span>
+            <strong>Informations générales</strong>
+            <div class="control-grid">
+                <div class="field-group">
+                    <label class="field-label" for="cac-name">Nom du CAC</label>
+                    <p class="text-muted">Utilisé pour nommer les repertoires générés.</p>
+                    <input
+                        id="cac-name"
+                        type="text"
+                        class="text-input"
+                        placeholder="Ex&nbsp;: CAC 2025"
+                        wire:model.debounce.400ms="cacName"
+                        @disabled($running)
+                    >
+                </div>
+                <div class="field-group">
+                    <span class="field-label">Dossier de travail</span>
+                    <p class="text-muted">Choisissez le répertoire contenant les PDFs à traiter.</p>
+                    <button type="button" class="btn btn-outline" wire:click="pickFolder" @disabled($running)>📁 Sélectionner un dossier</button>
+                    <span class="path-chip">{{ $folder ?? 'Aucun dossier sélectionné' }}</span>
+                </div>
+            </div>
         </article>
     </section>
 
@@ -195,7 +212,6 @@
                         @forelse ($fileEntries as $entry)
                             <li>
                                 <span class="item-title">{{ $entry['name'] }}</span>
-                                <span class="item-sub">{{ strtoupper($entry['type']) }}</span>
                             </li>
                         @empty
                             <li class="empty">Aucun fichier trouvé.</li>

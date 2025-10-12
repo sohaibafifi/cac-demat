@@ -16,7 +16,7 @@ class ReviewerPreparationService
     /**
      * @param array<int, array{name: string, files: array<int, string>}> $packages
      */
-    public function prepare(array $packages, string $sourceDir, string $outputDir, ?callable $logger = null): void
+    public function prepare(array $packages, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): void
     {
         $resolvedSourceDir = realpath($sourceDir);
         if ($resolvedSourceDir === false || ! is_dir($resolvedSourceDir)) {
@@ -56,6 +56,7 @@ class ReviewerPreparationService
             $resolvedSourceDir,
             $outputDir,
             'reviewer',
+            $collectionName,
             $logger,
             $inventory,
             function (array $file, string $recipient, bool $restricted, ?string $password) use ($logger): void {
