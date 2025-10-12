@@ -2,9 +2,9 @@
 
 namespace App\Services\Pipeline\Stages;
 
+use App\Services\Pdf\PdfProcessingContext;
 use App\Services\Pdf\QpdfCommandResolver;
-use App\Services\Pipeline\Contracts\PdfProcessingStage;
-use App\Services\Pipeline\PdfProcessingContext;
+use App\Services\Pipeline\Stages\Contracts\PdfProcessingStage;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;

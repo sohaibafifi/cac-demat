@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Services\Pipeline;
+namespace App\Services\Pdf;
 
+use App\Services\Pipeline\PdfProcessingPipeline;
 use App\Support\Text\NameSanitizer;
 use Illuminate\Support\Facades\File;
 

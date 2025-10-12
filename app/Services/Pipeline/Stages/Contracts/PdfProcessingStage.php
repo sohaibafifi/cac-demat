@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Services\Pipeline\Contracts;
+namespace App\Services\Pipeline\Stages\Contracts;
 
-use App\Services\Pipeline\PdfProcessingContext;
+use App\Services\Pdf\PdfProcessingContext;
 
 interface PdfProcessingStage
 {

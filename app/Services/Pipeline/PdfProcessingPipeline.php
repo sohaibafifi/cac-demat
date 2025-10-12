@@ -2,7 +2,8 @@
 
 namespace App\Services\Pipeline;
 
-use App\Services\Pipeline\Contracts\PdfProcessingStage;
+use App\Services\Pdf\PdfProcessingContext;
+use App\Services\Pipeline\Stages\Contracts\PdfProcessingStage;
 
 class PdfProcessingPipeline
 {

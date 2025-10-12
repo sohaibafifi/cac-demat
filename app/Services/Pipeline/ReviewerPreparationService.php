@@ -2,6 +2,7 @@
 
 namespace App\Services\Pipeline;
 
+use App\Services\Pdf\PdfPackageProcessor;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
