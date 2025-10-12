@@ -90,12 +90,7 @@ class CleanStage implements PdfProcessingStage
         }
 
         $count = 0;
-        $sanitised = @preg_replace_callback($this->pattern, function (array $hit) use (&$count, $logger) {
-            $count++;
-            $this->log($logger, sprintf('    → Séquence masquée: %s', $hit[0]));
-
-            return str_repeat('X', strlen($hit[0]));
-        }, $contents);
+        $sanitised = $this->maskContiguousMatches($contents, $count, $logger);
 
         if ($sanitised === null) {
             $this->log($logger, sprintf('    ⚠️ Motif de nettoyage désactivé (erreur PCRE: %d)', preg_last_error()));
@@ -103,6 +98,8 @@ class CleanStage implements PdfProcessingStage
 
             return false;
         }
+
+        $sanitised = $this->maskSplitMatches($sanitised, $count, $logger);
 
         if ($count === 0) {
             return false;
@@ -115,6 +112,53 @@ class CleanStage implements PdfProcessingStage
         $this->log($logger, sprintf('    → %d occurrence(s) masquées', $count));
 
         return true;
+    }
+
+    protected function maskContiguousMatches(string $contents, int &$count, ?callable $logger): ?string
+    {
+        $result = @preg_replace_callback($this->pattern, function (array $hit) use (&$count, $logger) {
+            $count++;
+            $this->log($logger, sprintf('    → Séquence masquée: %s', $hit[0]));
+
+            return str_repeat('X', strlen($hit[0]));
+        }, $contents);
+
+        return $result;
+    }
+
+    protected function maskSplitMatches(string $contents, int &$count, ?callable $logger): string
+    {
+        if ($this->pattern === '') {
+            return $contents;
+        }
+
+        $splitPattern = '/(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*[GPAEBSNIKT]\s*\))'
+            .'(-?\d+(?:\.\d+)?)(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*\d{5}\s*\))'
+            .'(-?\d+(?:\.\d+)?)(\(\s*[A-Z]{3}\s*\))/';
+
+        return preg_replace_callback($splitPattern, function (array $match) use (&$count, $logger) {
+            $count++;
+            $this->log($logger, sprintf(
+                '    → Séquence éclatée masquée: %s%s%s%s%s%s%s%s%s',
+                $match[1],
+                $match[2],
+                $match[3],
+                $match[4],
+                $match[5],
+                $match[6],
+                $match[7],
+                $match[8],
+                $match[9],
+            ));
+
+            $match[1] = preg_replace('/\d/', 'X', $match[1]);
+            $match[3] = preg_replace('/[A-Z]/i', 'X', $match[3]);
+            $match[5] = preg_replace('/\d/', 'X', $match[5]);
+            $match[7] = preg_replace('/\d/', 'X', $match[7]);
+            $match[9] = preg_replace('/[A-Z]/i', 'X', $match[9]);
+
+            return $match[1].$match[2].$match[3].$match[4].$match[5].$match[6].$match[7].$match[8].$match[9];
+        }, $contents);
     }
 
     protected function rebuildPdf(string $qdfPath): string
