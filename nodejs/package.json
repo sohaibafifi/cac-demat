@@ -1,0 +1,46 @@
+{
+  "name": "cac-demat-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "tsc && node scripts/copy-electron-assets.cjs",
+    "build:watch": "tsc --watch",
+    "lint": "eslint .",
+    "dev": "npm run electron",
+    "electron": "npm run build && electron .",
+    "electron:package": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "electron": "^28.3.1",
+    "electron-builder": "^24.13.3",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0"
+  },
+  "build": {
+    "appId": "fr.univ-artois.cac-demat",
+    "productName": "CAC Demat",
+    "copyright": "Copyright © 2025 Université d'Artois",
+    "files": [
+      "dist/**/*",
+      "main.cjs",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "dist/resources/commands/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/resources/commands",
+        "to": "resources/commands"
+      }
+    ],
+    "directories": {
+      "buildResources": "build"
+    }
+  }
+}

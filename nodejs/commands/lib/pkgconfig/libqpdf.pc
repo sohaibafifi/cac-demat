@@ -1,0 +1,11 @@
+prefix=/opt/homebrew/Cellar/qpdf/12.2.0
+exec_prefix=${prefix}
+libdir=/opt/homebrew/Cellar/qpdf/12.2.0/lib
+includedir=/opt/homebrew/Cellar/qpdf/12.2.0/include
+
+Name: libqpdf
+Description: PDF transformation library
+Version: 12.2.0
+Requires.private: zlib, libjpeg
+Libs: -L${libdir} -lqpdf
+Cflags: -I${includedir}
