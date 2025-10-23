@@ -43,6 +43,7 @@ const config = {
       platforms: ['win32'],
       config: {
         name: 'cac_demat',
+        authors: 'Université d\'Artois',
         setupExe: 'CAC-Demat-Setup.exe',
       },
     },
