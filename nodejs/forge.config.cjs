@@ -8,9 +8,15 @@ const ignoredPatterns = [
   /dist\/win-.*/i,
   /dist\/linux-.*/i,
   /dist\/.*\.(zip|dmg|exe|msi)$/i,
+  /release\/mac-.*/i,
+  /release\/win-.*/i,
+  /release\/linux-.*/i,
+  /release\/.*\.(zip|dmg|exe|msi)$/i
 ];
 const packagerConfig = {
-  asar: true,
+  asar: {
+    unpackDir: 'dist/resources/commands',
+  },
   ignore: (filePath) => {
     const normalized = filePath.replace(/\\/g, '/');
     return ignoredPatterns.some((pattern) => pattern.test(normalized));
