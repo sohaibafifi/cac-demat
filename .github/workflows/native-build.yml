@@ -2,9 +2,14 @@ name: Apps Build
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+
 
 jobs:
   native-build:
@@ -38,24 +43,31 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            vendor
+            nativephp/vendor
             ~/.composer/cache
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install PHP dependencies
+        working-directory: nativephp
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Prepare environment
+        working-directory: nativephp
         run: |
           php -r "if (!file_exists('.env') && file_exists('.env.example')) copy('.env.example', '.env');"
           php artisan key:generate
 
       - name: Build NativePHP app
+        working-directory: nativephp
         run: php artisan native:build ${{ matrix['build-os'] }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nativephp-${{ matrix.artifact-suffix }}
-          path: dist/**
+          path: nativephp/dist/**
+      
+      - name: Publish build artifacts
+        working-directory: nativephp
+        run: php artisan native:publish ${{ matrix['build-os'] }}
