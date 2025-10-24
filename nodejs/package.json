@@ -28,7 +28,7 @@
     "electron": "^38.4.0",
     "electron-builder": "^24.13.3",
     "eslint": "^8.57.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.9.3"
   },
   "build": {
     "appId": "fr.univ-artois.cac-demat",

@@ -3,6 +3,7 @@ import { MemberPreparationService, MemberEntry } from '../services/pipeline/memb
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
 import type { PreparationStats } from '../services/pdf/pdfPackageProcessor.js';
+import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
 
 export interface ManualReviewerAssignment {
   file: string;
@@ -68,6 +69,7 @@ export class DashboardCoordinator {
   lastRunMode: RunMode | null = null;
   lastRunStats: RunStats | null = null;
   private runCounter = 0;
+  private readonly summaryBuilder = new ReviewerSummaryBuilder();
 
   constructor(
     private readonly csvLoader: CsvAssignmentLoader,
@@ -91,8 +93,7 @@ export class DashboardCoordinator {
       this.appendLog('Attributions de rapporteurs importées.');
       await this.checkReviewerFileWarnings();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.appendLog(`Échec de lecture du CSV des rapporteurs: ${message}`);
+      this.appendLog(`Échec de lecture du CSV des rapporteurs: ${this.getErrorMessage(error)}`);
     }
   }
 
@@ -104,32 +105,20 @@ export class DashboardCoordinator {
       this.membersFromCsv = await this.csvLoader.members(path);
       this.appendLog('Membres importés.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.appendLog(`Échec de lecture du fichier des membres: ${message}`);
+      this.appendLog(`Échec de lecture du fichier des membres: ${this.getErrorMessage(error)}`);
     }
   }
 
   addManualReviewer(file: string, reviewerNames: string | string[]): void {
     const trimmedFile = file.trim();
-    const names = Array.isArray(reviewerNames)
-      ? reviewerNames
-      : reviewerNames.split(/[,;\n]/);
+    const reviewers = this.parseReviewerNames(reviewerNames);
 
-    const reviewers = names
-      .map((name) => name.trim())
-      .filter((name) => name !== '');
-
-    if (trimmedFile === '' || reviewers.length === 0) {
+    if (!trimmedFile || reviewers.length === 0) {
       this.appendLog('Veuillez renseigner un fichier et au moins un rapporteur.');
       return;
     }
 
-    this.reviewersManual.push({
-      file: trimmedFile,
-      reviewers,
-      source: 'manual',
-    });
-
+    this.reviewersManual.push({ file: trimmedFile, reviewers, source: 'manual' });
     this.appendLog(`Attribution manuelle ajoutée pour ${trimmedFile}.`);
 
     if (trimmedFile.toLowerCase().endsWith('.pdf') && !this.availableFiles.includes(trimmedFile)) {
@@ -141,12 +130,9 @@ export class DashboardCoordinator {
   }
 
   removeManualReviewer(index: number): void {
-    if (index < 0 || index >= this.reviewersManual.length) {
-      return;
-    }
-
-    const [removed] = this.reviewersManual.splice(index, 1);
+    const removed = this.reviewersManual[index];
     if (removed) {
+      this.reviewersManual.splice(index, 1);
       this.appendLog(`Attribution manuelle supprimée: ${removed.file}`);
       void this.checkReviewerFileWarnings(false);
     }
@@ -154,157 +140,47 @@ export class DashboardCoordinator {
 
   addManualMember(name: string, filesRaw: string = ''): void {
     const trimmed = name.trim();
-    if (trimmed === '') {
+    if (!trimmed) {
       this.appendLog('Veuillez saisir un nom de membre.');
       return;
     }
-    const files = (filesRaw ?? '')
-      .split(/[;,\n]/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '');
 
+    const files = this.parseFileList(filesRaw);
     this.membersManual.push({ name: trimmed, files, source: 'manual' });
     this.appendLog(`Membre manuel ajouté: ${trimmed}`);
   }
 
   removeManualMember(index: number): void {
-    if (index < 0 || index >= this.membersManual.length) {
-      return;
-    }
-
-    const [removed] = this.membersManual.splice(index, 1);
+    const removed = this.membersManual[index];
     if (removed) {
+      this.membersManual.splice(index, 1);
       this.appendLog(`Membre manuel supprimé: ${removed.name}`);
     }
   }
 
   getCanRunReviewers(): boolean {
-    return (
-      !this.running
-      && !!this.folder
-      && this.reviewerPackages().length > 0
-      && this.cacName.trim() !== ''
-    );
+    return !this.running && !!this.folder && this.reviewerPackages().length > 0 && !!this.cacName.trim();
   }
 
   getCanRunMembers(): boolean {
-    return (
-      !this.running
-      && !!this.folder
-      && this.combinedMembers().length > 0
-      && this.cacName.trim() !== ''
-    );
+    return !this.running && !!this.folder && this.combinedMembers().length > 0 && !!this.cacName.trim();
   }
 
   setManualMemberFiles(index: number, files: string[]): void {
-    if (index < 0 || index >= this.membersManual.length) {
-      return;
+    if (index >= 0 && index < this.membersManual.length) {
+      this.membersManual[index].files = files.map((f) => f.trim()).filter((f) => f);
     }
-
-    const cleaned = files
-      .map((file) => file.trim())
-      .filter((file) => file !== '');
-
-    this.membersManual[index].files = cleaned;
   }
 
   getReviewerSummaries(): ReviewerSummary[] {
-    const missingLookup = this.missingReviewerFiles.map((file) => file.toLowerCase());
-    const grouped = new Map<string, ReviewerSummary>();
-
-    const appendAssignment = (
-      reviewer: string,
-      file: string,
-      source: 'csv' | 'manual',
-      manualIndex: number | null,
-    ) => {
-      const reviewerName = reviewer.trim();
-      if (reviewerName === '' || file === '') {
-        return;
-      }
-
-      const normalisedReviewer = reviewerName.toLowerCase();
-      if (!grouped.has(normalisedReviewer)) {
-        grouped.set(normalisedReviewer, {
-          name: reviewerName,
-          files: [],
-          hasManual: false,
-          hasCsv: false,
-          hasMissing: false,
-        });
-      }
-
-      const summary = grouped.get(normalisedReviewer)!;
-      const isMissing = missingLookup.includes(file.toLowerCase());
-
-      summary.files.push({
-        name: file,
-        missing: isMissing,
-        manual: source === 'manual',
-        manualIndex,
-        source,
-      });
-
-      if (source === 'manual') {
-        summary.hasManual = true;
-      }
-
-      if (source === 'csv') {
-        summary.hasCsv = true;
-      }
-
-      if (isMissing) {
-        summary.hasMissing = true;
-      }
-    };
-
-    this.reviewersFromCsv.forEach((assignment) => {
-      const file = assignment.file.trim();
-      if (file === '') {
-        return;
-      }
-
-      assignment.reviewers
-        .map((name) => name.trim())
-        .filter((name) => name !== '')
-        .forEach((name) => appendAssignment(name, file, 'csv', null));
-    });
-
-    this.reviewersManual.forEach((assignment, index) => {
-      const file = assignment.file.trim();
-      if (file === '') {
-        return;
-      }
-
-      assignment.reviewers
-        .map((name) => name.trim())
-        .filter((name) => name !== '')
-        .forEach((name) => appendAssignment(name, file, 'manual', index));
-    });
-
-    const summaries = Array.from(grouped.values());
-    summaries.forEach((summary) => {
-      summary.files.sort((a, b) => a.name.localeCompare(b.name));
-    });
-
-    summaries.sort((a, b) => a.name.localeCompare(b.name));
-    return summaries;
+    return this.summaryBuilder.build(this.reviewersFromCsv, this.reviewersManual, this.missingReviewerFiles);
   }
 
   reviewerPackages(): ReviewerPackage[] {
     return this.getReviewerSummaries()
       .map((summary) => {
-        const name = summary.name.trim();
-        const files = summary.files
-          .map((entry) => entry.name.trim())
-          .filter((entry) => entry !== '');
-
-        if (name === '' || files.length === 0) {
-          return null;
-        }
-
-        const uniqueFiles = Array.from(new Set(files));
-        return { name, files: uniqueFiles };
+        const files = Array.from(new Set(summary.files.map((f) => f.name.trim()).filter(Boolean)));
+        return files.length > 0 ? { name: summary.name.trim(), files } : null;
       })
       .filter((entry): entry is ReviewerPackage => entry !== null);
   }
@@ -328,12 +204,10 @@ export class DashboardCoordinator {
 
     for (const entry of combined) {
       const key = entry.name.toLowerCase();
-      if (seen.has(key)) {
-        continue;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push({ name: entry.name, files: entry.files });
       }
-
-      seen.add(key);
-      unique.push({ name: entry.name, files: entry.files });
     }
 
     return unique;
@@ -348,68 +222,79 @@ export class DashboardCoordinator {
   }
 
   async executeRun(mode: RunMode): Promise<void> {
-    if (this.running) {
-      return;
-    }
+    if (this.running) return;
 
-    this.logMessages = [];
-    this.log = '';
+    this.resetLog();
     this.appendLog('Initialisation du pipeline...');
 
     try {
-      if (!this.folder) {
-        throw new Error('Veuillez d\'abord sélectionner un dossier.');
-      }
-
-      const collectionName = this.cacName.trim();
-      if (collectionName === '') {
-        throw new Error('Veuillez saisir le nom du CAC.');
-      }
-
-      if (mode === 'reviewers') {
-        if (this.reviewerPackages().length === 0) {
-          throw new Error('Aucune attribution de rapporteur disponible.');
-        }
-      } else if (this.combinedMembers().length === 0) {
-        throw new Error('Aucun membre disponible.');
-      }
+      this.validateRunPrerequisites(mode);
 
       this.running = true;
       this.status = 'En cours...';
 
-      const logger = (message: string) => {
-        this.appendLog(message);
-      };
+      const logger = (message: string) => this.appendLog(message);
 
       if (mode === 'reviewers') {
-        const packages = this.reviewerPackages();
-        const outputDir = await this.workspace.resolveOutputPath(this.folder, 'rapporteurs');
-        this.lastReviewerOutputDir = outputDir;
-        this.lastRunMode = 'reviewers';
-        this.appendLog('Préparation des packages rapporteurs...');
-        const stats = await this.reviewerService.prepare(packages, this.folder, outputDir, collectionName, logger);
-        this.appendLog(`Dossier de sortie: ${outputDir}`);
-        this.applyRunStats('reviewers', outputDir, stats);
+        await this.runReviewersPipeline(logger);
       } else {
-        const entries = this.combinedMembers();
-        const outputDir = await this.workspace.resolveOutputPath(this.folder, 'membres');
-        this.lastMemberOutputDir = outputDir;
-        this.lastRunMode = 'members';
-        this.appendLog('Préparation des packages membres...');
-        const stats = await this.memberService.prepare(entries, this.folder, outputDir, collectionName, logger);
-        this.appendLog(`Dossier de sortie: ${outputDir}`);
-        this.applyRunStats('members', outputDir, stats);
+        await this.runMembersPipeline(logger);
       }
 
       this.status = 'Terminé';
       this.appendLog('Pipeline terminé avec succès.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       this.status = 'Erreur';
-      this.appendLog(`Erreur: ${message}`);
+      this.appendLog(`Erreur: ${this.getErrorMessage(error)}`);
     } finally {
       this.running = false;
     }
+  }
+
+  private validateRunPrerequisites(mode: RunMode): void {
+    if (!this.folder) {
+      throw new Error('Veuillez d\'abord sélectionner un dossier.');
+    }
+
+    if (!this.cacName.trim()) {
+      throw new Error('Veuillez saisir le nom du CAC.');
+    }
+
+    if (mode === 'reviewers' && this.reviewerPackages().length === 0) {
+      throw new Error('Aucune attribution de rapporteur disponible.');
+    }
+
+    if (mode === 'members' && this.combinedMembers().length === 0) {
+      throw new Error('Aucun membre disponible.');
+    }
+  }
+
+  private async runReviewersPipeline(logger: (message: string) => void): Promise<void> {
+    const packages = this.reviewerPackages();
+    const outputDir = await this.workspace.resolveOutputPath(this.folder!, 'rapporteurs');
+
+    this.lastReviewerOutputDir = outputDir;
+    this.lastRunMode = 'reviewers';
+    this.appendLog('Préparation des packages rapporteurs...');
+
+    const stats = await this.reviewerService.prepare(packages, this.folder!, outputDir, this.cacName, logger);
+
+    this.appendLog(`Dossier de sortie: ${outputDir}`);
+    this.applyRunStats('reviewers', outputDir, stats);
+  }
+
+  private async runMembersPipeline(logger: (message: string) => void): Promise<void> {
+    const entries = this.combinedMembers();
+    const outputDir = await this.workspace.resolveOutputPath(this.folder!, 'membres');
+
+    this.lastMemberOutputDir = outputDir;
+    this.lastRunMode = 'members';
+    this.appendLog('Préparation des packages membres...');
+
+    const stats = await this.memberService.prepare(entries, this.folder!, outputDir, this.cacName, logger);
+
+    this.appendLog(`Dossier de sortie: ${outputDir}`);
+    this.applyRunStats('members', outputDir, stats);
   }
 
   private async refreshAvailableFiles(): Promise<void> {
@@ -443,30 +328,48 @@ export class DashboardCoordinator {
 
   private applyRunStats(mode: RunMode, outputDir: string, stats: PreparationStats): void {
     this.runCounter += 1;
-    const requested = stats.requestedRecipients;
-    const processed = stats.processedRecipients;
-    const files = stats.processedFiles;
-    const missing = stats.missingFiles.length;
 
     this.lastRunStats = {
       runId: this.runCounter,
       mode,
-      requested,
-      recipients: processed,
-      files,
-      missing,
+      requested: stats.requestedRecipients,
+      recipients: stats.processedRecipients,
+      files: stats.processedFiles,
+      missing: stats.missingFiles.length,
       outputDir,
     };
 
-    const summary = `${processed}/${requested} destinataire(s), ${files} fichier(s) généré(s).`;
+    const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
     this.appendLog(`Statistiques: ${summary}`);
-    if (missing > 0) {
-      this.appendLog(`⚠️ ${missing} fichier(s) introuvable(s) ignoré(s).`);
+
+    if (stats.missingFiles.length > 0) {
+      this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
     }
+  }
+
+  private parseReviewerNames(reviewerNames: string | string[]): string[] {
+    const names = Array.isArray(reviewerNames) ? reviewerNames : reviewerNames.split(/[,;\n]/);
+    return names.map((name) => name.trim()).filter((name) => name !== '');
+  }
+
+  private parseFileList(filesRaw: string): string[] {
+    return (filesRaw ?? '')
+      .split(/[;,\n]/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+  }
+
+  private resetLog(): void {
+    this.logMessages = [];
+    this.log = '';
   }
 
   private appendLog(message: string): void {
     this.logMessages.push(message);
     this.log = this.logMessages.join('\n');
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }
