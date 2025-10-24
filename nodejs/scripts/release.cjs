@@ -29,15 +29,18 @@ function checkGitStatus() {
     // Filter out untracked files (lines starting with ??)
     const trackedChanges = lines.filter(line => !line.startsWith('??'));
 
-    // Check if only package.json is modified (among tracked files)
-    const onlyPackageJson = trackedChanges.every(line => line.includes('package.json'));
+    // Check if only package.json and/or package-lock.json are modified (among tracked files)
+    const onlyPackageFiles = trackedChanges.every(line =>
+      line.includes('package.json') || line.includes('package-lock.json')
+    );
 
-    if (trackedChanges.length > 0 && !onlyPackageJson) {
-      console.error('\n❌ You have uncommitted changes to tracked files (other than package.json).');
+    if (trackedChanges.length > 0 && !onlyPackageFiles) {
+      console.error('\n❌ You have uncommitted changes to tracked files (other than package files).');
       console.error('Please commit or stash them before releasing.\n');
       console.log('Changed tracked files:');
       trackedChanges.forEach(line => console.log(`  ${line}`));
-      console.log('\nNote: Untracked files (new files) are OK and will be ignored.\n');
+      console.log('\nNote: Changes to package.json and package-lock.json are OK.');
+      console.log('Note: Untracked files (new files) are OK and will be ignored.\n');
       process.exit(1);
     }
 
