@@ -73,12 +73,13 @@ try {
 
     fs.rmSync(commandsDst, { recursive: true, force: true });
 
-    // Filter function to copy only platform-specific and necessary files
+    // Always copy ALL platform binaries during build
+    // The after-pack.cjs script will remove the ones we don't need per platform
     const shouldCopy = (srcPath, entry) => {
       const relativePath = path.relative(candidate, srcPath);
       const parts = relativePath.split(path.sep);
 
-      // Always copy lib directory but exclude static libraries
+      // Always copy lib directory (after-pack will remove if not needed)
       if (parts[0] === 'lib') {
         if (entry.isDirectory()) return true;
         if (entry.name.endsWith('.a')) return false; // Exclude static libraries
@@ -86,10 +87,10 @@ try {
         return true;
       }
 
-      // Only copy platform-specific directory
+      // Always copy all platform directories
+      // The after-pack script will clean up the unnecessary ones
       if (parts[0] === 'mac' || parts[0] === 'win' || parts[0] === 'linux') {
-        const platformDir = platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : 'linux';
-        return parts[0] === platformDir;
+        return true;
       }
 
       return true;
@@ -97,12 +98,13 @@ try {
 
     copied = copyDirectory(candidate, commandsDst, shouldCopy);
     if (copied) {
-      console.log(`✓ Copied commands for platform: ${platform}`);
+      console.log(`✓ Copied commands for all platforms (mac, win, linux, lib)`);
       break;
     }
   }
 
   if (copied) {
+    // Set executable permissions for all platform binaries
     const macBinary = path.join(commandsDst, 'mac', 'qpdf');
     if (fs.existsSync(macBinary)) {
       fs.chmodSync(macBinary, 0o755);
@@ -111,6 +113,11 @@ try {
     const winBinary = path.join(commandsDst, 'win', 'qpdf.exe');
     if (fs.existsSync(winBinary)) {
       fs.chmodSync(winBinary, 0o755);
+    }
+
+    const linuxBinary = path.join(commandsDst, 'linux', 'qpdf');
+    if (fs.existsSync(linuxBinary)) {
+      fs.chmodSync(linuxBinary, 0o755);
     }
   }
 } catch (err) {

@@ -48,6 +48,54 @@ const packagerConfig = {
     // Ignore map files
     return normalized.endsWith('.map');
   },
+  afterCopy: [
+    (buildPath, electronVersion, platform, arch, callback) => {
+      // Map platform to folder names
+      const platformMap = {
+        'darwin': 'mac',
+        'win32': 'win',
+        'linux': 'linux',
+        'mas': 'mac'
+      };
+
+      const targetPlatform = platformMap[platform];
+      const commandsPath = path.join(buildPath, 'dist', 'resources', 'commands');
+
+      if (fs.existsSync(commandsPath)) {
+        console.log(`Cleaning up commands for platform: ${targetPlatform}`);
+
+        // Remove other platform folders
+        const allPlatforms = ['mac', 'win', 'linux'];
+        const platformsToRemove = allPlatforms.filter(p => p !== targetPlatform);
+
+        for (const platformToRemove of platformsToRemove) {
+          const platformDir = path.join(commandsPath, platformToRemove);
+          if (fs.existsSync(platformDir)) {
+            console.log(`  Removing unnecessary platform: ${platformToRemove}`);
+            fs.rmSync(platformDir, { recursive: true, force: true });
+          }
+        }
+
+        // Remove lib folder for Windows and Linux (only macOS needs it)
+        if (targetPlatform === 'win' || targetPlatform === 'linux') {
+          const libDir = path.join(commandsPath, 'lib');
+          if (fs.existsSync(libDir)) {
+            console.log(`  Removing lib folder (not needed for ${targetPlatform})`);
+            fs.rmSync(libDir, { recursive: true, force: true });
+          }
+        }
+
+        // Verify the correct platform folder exists
+        const correctPlatformDir = path.join(commandsPath, targetPlatform);
+        if (fs.existsSync(correctPlatformDir)) {
+          const contents = fs.readdirSync(commandsPath);
+          console.log(`  ✓ Final contents: ${contents.join(', ')}`);
+        }
+      }
+
+      callback();
+    }
+  ],
   ...(iconExists ? { icon: baseIconPath } : {}),
 };
 

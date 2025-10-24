@@ -20,10 +20,10 @@
     "lint": "eslint .",
     "dev": "npm run electron",
     "electron": "npm run build && electron .",
-    "electron:package": "npm run build && electron-builder -mwl",
-    "electron:package:mac": "npm run build && electron-builder --mac",
-    "electron:package:win": "npm run build && electron-builder --win",
-    "electron:package:linux": "npm run build && electron-builder --linux",
+    "electron:package": "npm run build -- -mwl && electron-builder -mwl",
+    "electron:package:mac": "npm run build -- --mac && electron-builder --mac",
+    "electron:package:win": "npm run build -- --win && electron-builder --win",
+    "electron:package:linux": "npm run build -- --linux && electron-builder --linux",
     "publish": "electron-forge publish",
     "prune": "npm prune --production",
     "optimize": "node scripts/optimize-size.cjs",
@@ -101,8 +101,7 @@
       "category": "Office",
       "target": [
         "AppImage",
-        "deb",
-        "rpm"
+        "deb"
       ],
       "maintainer": "Université d'Artois"
     },

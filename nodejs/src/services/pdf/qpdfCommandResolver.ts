@@ -32,6 +32,10 @@ const resolveCandidatesForPlatform = (root: string): string[] => {
     return [path.join(root, 'mac', 'qpdf')];
   }
 
+  if (process.platform === 'linux') {
+    return [path.join(root, 'linux', 'qpdf')];
+  }
+
   return [];
 };
 
