@@ -3,16 +3,21 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const baseIconPath = path.join(__dirname, 'assets', 'icon');
-const ignoredPatterns = [
-  /dist\/mac-.*/i,
-  /dist\/win-.*/i,
-  /dist\/linux-.*/i,
-  /dist\/.*\.(zip|dmg|exe|msi)$/i,
-  /release\/mac-.*/i,
-  /release\/win-.*/i,
-  /release\/linux-.*/i,
-  /release\/.*\.(zip|dmg|exe|msi)$/i
-];
+
+const buildIgnoredPatterns = (directory) => {
+  const platforms = ['mac', 'win', 'linux'];
+  const archivePattern = '\\.(zip|dmg|exe|msi)$';
+
+  return [
+    ...platforms.map((platform) => new RegExp(`${directory}/${platform}-.*`, 'i')),
+    new RegExp(`${directory}/.*${archivePattern}`, 'i'),
+  ];
+};
+
+const ignoredPatterns = ['dist', 'release'].flatMap(buildIgnoredPatterns);
+
+const iconExists = ['.icns', '.ico'].some((ext) => fs.existsSync(`${baseIconPath}${ext}`));
+
 const packagerConfig = {
   asar: {
     unpackDir: 'dist/resources/commands',
@@ -21,10 +26,8 @@ const packagerConfig = {
     const normalized = filePath.replace(/\\/g, '/');
     return ignoredPatterns.some((pattern) => pattern.test(normalized));
   },
+  ...(iconExists ? { icon: baseIconPath } : {}),
 };
-if (fs.existsSync(`${baseIconPath}.icns`) || fs.existsSync(`${baseIconPath}.ico`)) {
-  packagerConfig.icon = baseIconPath;
-}
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 const config = {

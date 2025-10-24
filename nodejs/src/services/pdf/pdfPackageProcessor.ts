@@ -24,6 +24,13 @@ export type AfterFileProcessed = (
   password: string | null,
 ) => void | Promise<void>;
 
+export interface PreparationStats {
+  requestedRecipients: number;
+  processedRecipients: number;
+  processedFiles: number;
+  missingFiles: string[];
+}
+
 export class PdfPackageProcessor {
   constructor(private readonly pipeline: PdfProcessingPipeline) {}
 
@@ -36,7 +43,7 @@ export class PdfPackageProcessor {
     logger?: PipelineLogger,
     inventory?: PdfInventoryEntry[],
     afterFileProcessed?: AfterFileProcessed,
-  ): Promise<void> {
+  ): Promise<PreparationStats> {
     const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir));
     const lookup = new Map<string, PdfInventoryEntry>();
 
@@ -48,6 +55,14 @@ export class PdfPackageProcessor {
     const collectionFolder = trimmedCollection !== ''
       ? NameSanitizer.sanitize(trimmedCollection, 'collection')
       : null;
+
+    const stats: PreparationStats = {
+      requestedRecipients: packages.length,
+      processedRecipients: 0,
+      processedFiles: 0,
+      missingFiles: [],
+    };
+    const missing = new Set<string>();
 
     for (const pkg of packages) {
       const name = pkg.name.trim();
@@ -71,6 +86,7 @@ export class PdfPackageProcessor {
       }
 
       const useDefaultLogging = !afterFileProcessed;
+      let processedForRecipient = 0;
 
       for (const relative of files) {
         const key = relative.toLowerCase();
@@ -78,6 +94,7 @@ export class PdfPackageProcessor {
 
         if (!file) {
           this.log(logger, `Warning: Source file ${relative} not found. Skipping for ${name}.`);
+          missing.add(relative);
           continue;
         }
 
@@ -98,6 +115,8 @@ export class PdfPackageProcessor {
         );
 
         const result = await this.pipeline.process(context, logger);
+        processedForRecipient += 1;
+        stats.processedFiles += 1;
 
         if (afterFileProcessed) {
           await afterFileProcessed(file, name, true, result.password);
@@ -105,7 +124,14 @@ export class PdfPackageProcessor {
           this.log(logger, `Processed ${file.relative} for ${name} (owner password: ${result.password})`);
         }
       }
+
+      if (processedForRecipient > 0) {
+        stats.processedRecipients += 1;
+      }
     }
+
+    stats.missingFiles = Array.from(missing).sort((a, b) => a.localeCompare(b));
+    return stats;
   }
 
   async collectPdfFiles(resolvedSourceDir: string): Promise<PdfInventoryEntry[]> {

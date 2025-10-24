@@ -36,6 +36,16 @@ type CoordinatorState = {
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
   lastMemberOutputDir: string | null;
+  lastRunMode: 'reviewers' | 'members' | null;
+  lastRunStats: {
+    runId: number;
+    mode: 'reviewers' | 'members';
+    requested: number;
+    recipients: number;
+    files: number;
+    missing: number;
+    outputDir: string;
+  } | null;
 };
 
 declare global {
@@ -79,6 +89,7 @@ let currentState: CoordinatorState | null = null;
 let busy = false;
 let assignmentTab: 'reviewers' | 'members' = 'reviewers';
 let advancedMode = false;
+let lastRunNotificationId: number | null = null;
 
 const elements = {
   folderPath: document.getElementById('folder-path') as HTMLElement,
@@ -130,11 +141,103 @@ function setBusy(value: boolean): void {
 function setState(state: CoordinatorState): void {
   currentState = state;
   render();
+  notifyCompletionIfNeeded(state);
 }
 
 function setAdvancedMode(enabled: boolean): void {
   advancedMode = enabled;
   document.body.dataset.advanced = enabled ? 'true' : 'false';
+}
+
+function buildCompletionMessage(stats: NonNullable<CoordinatorState['lastRunStats']>): string {
+  const modeLabel = stats.mode === 'reviewers' ? 'rapporteurs' : 'membres';
+  const segments = [
+    `${stats.recipients}/${stats.requested} destinataire(s)`,
+    `${stats.files} fichier(s) généré(s)`,
+  ];
+  if (stats.missing > 0) {
+    segments.push(`${stats.missing} fichier(s) introuvable(s) ignoré(s)`);
+  }
+
+  return [
+    `Préparation ${modeLabel} terminée.`,
+    segments.join(', '),
+    `Dossier: ${stats.outputDir}`,
+  ].join('\n');
+}
+
+function notifyCompletionIfNeeded(state: CoordinatorState): void {
+  if (state.status !== 'Terminé' || !state.lastRunStats) {
+    return;
+  }
+
+  const { lastRunStats } = state;
+  if (lastRunNotificationId === lastRunStats.runId) {
+    return;
+  }
+
+  lastRunNotificationId = lastRunStats.runId;
+  const message = buildCompletionMessage(lastRunStats);
+
+  const showDialog = async (): Promise<void> => {
+    const api = await resolveElectronApi();
+    if (api?.showMessageBox) {
+      const [headline, ...rest] = message.split('\n');
+      const detail = rest.join('\n').trim();
+      const options = {
+        type: 'info' as const,
+        buttons: ['Fermer'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Pipeline terminé',
+        message: headline,
+        detail: detail === '' ? undefined : detail,
+      };
+
+      try {
+        await api.showMessageBox(options);
+        return;
+      } catch (error) {
+        console.warn('[renderer] Impossible d\'afficher la boîte de dialogue', error);
+      }
+    }
+
+    if (typeof alert === 'function') {
+      try {
+        alert(message);
+      } catch {
+        // ignore alert failures
+      }
+    }
+  };
+
+  void showDialog();
+
+  if ('Notification' in window) {
+    try {
+      if (Notification.permission === 'granted') {
+        new Notification('CAC Demat', { body: message });
+        return;
+      }
+
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+          .then((permission) => {
+            if (permission === 'granted') {
+              new Notification('CAC Demat', { body: message });
+            } else {
+              void showDialog();
+            }
+          })
+          .catch(() => {
+            void showDialog();
+          });
+        return;
+      }
+    } catch (error) {
+      console.warn('[renderer] Notification non disponible', error);
+    }
+  }
 }
 
 function updateActionStates(): void {

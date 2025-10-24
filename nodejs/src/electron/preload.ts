@@ -1,4 +1,5 @@
 import { createRequire } from 'module';
+import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 
 const require = createRequire(import.meta.url);
 const electron = require('electron') as typeof import('electron');
@@ -27,6 +28,8 @@ const api = {
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
   openPath: (filePath: string) => ipcRenderer.invoke('coordinator:open-path', filePath) as Promise<boolean>,
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode') as Promise<boolean>,
+  showMessageBox: (options: MessageBoxOptions) =>
+    ipcRenderer.invoke('dialog:show-message', options) as Promise<MessageBoxReturnValue>,
   onAdvancedModeChange: (callback: (enabled: boolean) => void) => {
     const handler = (_event: unknown, enabled: boolean) => callback(Boolean(enabled));
     ipcRenderer.on('view:advanced-mode', handler);

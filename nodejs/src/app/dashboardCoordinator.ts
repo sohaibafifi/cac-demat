@@ -2,6 +2,7 @@ import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment } from '../se
 import { MemberPreparationService, MemberEntry } from '../services/pipeline/memberPreparationService.js';
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
+import type { PreparationStats } from '../services/pdf/pdfPackageProcessor.js';
 
 export interface ManualReviewerAssignment {
   file: string;
@@ -33,6 +34,16 @@ export interface ReviewerSummary {
 
 export type RunMode = 'reviewers' | 'members';
 
+export interface RunStats {
+  runId: number;
+  mode: RunMode;
+  requested: number;
+  recipients: number;
+  files: number;
+  missing: number;
+  outputDir: string;
+}
+
 export class DashboardCoordinator {
   folder: string | null = null;
   csvReviewers: string | null = null;
@@ -55,6 +66,8 @@ export class DashboardCoordinator {
   lastReviewerOutputDir: string | null = null;
   lastMemberOutputDir: string | null = null;
   lastRunMode: RunMode | null = null;
+  lastRunStats: RunStats | null = null;
+  private runCounter = 0;
 
   constructor(
     private readonly csvLoader: CsvAssignmentLoader,
@@ -374,16 +387,18 @@ export class DashboardCoordinator {
         this.lastReviewerOutputDir = outputDir;
         this.lastRunMode = 'reviewers';
         this.appendLog('Préparation des packages rapporteurs...');
-        await this.reviewerService.prepare(packages, this.folder, outputDir, collectionName, logger);
+        const stats = await this.reviewerService.prepare(packages, this.folder, outputDir, collectionName, logger);
         this.appendLog(`Dossier de sortie: ${outputDir}`);
+        this.applyRunStats('reviewers', outputDir, stats);
       } else {
         const entries = this.combinedMembers();
         const outputDir = await this.workspace.resolveOutputPath(this.folder, 'membres');
         this.lastMemberOutputDir = outputDir;
         this.lastRunMode = 'members';
         this.appendLog('Préparation des packages membres...');
-        await this.memberService.prepare(entries, this.folder, outputDir, collectionName, logger);
+        const stats = await this.memberService.prepare(entries, this.folder, outputDir, collectionName, logger);
         this.appendLog(`Dossier de sortie: ${outputDir}`);
+        this.applyRunStats('members', outputDir, stats);
       }
 
       this.status = 'Terminé';
@@ -424,6 +439,30 @@ export class DashboardCoordinator {
     }
 
     this.missingReviewerFiles = missing;
+  }
+
+  private applyRunStats(mode: RunMode, outputDir: string, stats: PreparationStats): void {
+    this.runCounter += 1;
+    const requested = stats.requestedRecipients;
+    const processed = stats.processedRecipients;
+    const files = stats.processedFiles;
+    const missing = stats.missingFiles.length;
+
+    this.lastRunStats = {
+      runId: this.runCounter,
+      mode,
+      requested,
+      recipients: processed,
+      files,
+      missing,
+      outputDir,
+    };
+
+    const summary = `${processed}/${requested} destinataire(s), ${files} fichier(s) généré(s).`;
+    this.appendLog(`Statistiques: ${summary}`);
+    if (missing > 0) {
+      this.appendLog(`⚠️ ${missing} fichier(s) introuvable(s) ignoré(s).`);
+    }
   }
 
   private appendLog(message: string): void {

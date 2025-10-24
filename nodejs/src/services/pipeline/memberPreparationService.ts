@@ -1,5 +1,11 @@
 import { mkdir, realpath } from 'fs/promises';
-import { PdfPackageProcessor, PdfPackage, PdfInventoryEntry, PipelineLogger } from '../pdf/pdfPackageProcessor.js';
+import {
+  PdfPackageProcessor,
+  PdfPackage,
+  PdfInventoryEntry,
+  PipelineLogger,
+  PreparationStats,
+} from '../pdf/pdfPackageProcessor.js';
 
 export interface MemberEntry {
   name: string;
@@ -15,7 +21,7 @@ export class MemberPreparationService {
     outputDir: string,
     collectionName: string,
     logger?: PipelineLogger,
-  ): Promise<void> {
+  ): Promise<PreparationStats> {
     const resolvedSourceDir = await this.resolveSourceDir(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
@@ -52,10 +58,15 @@ export class MemberPreparationService {
     }
 
     if (packages.length === 0) {
-      return;
+      return {
+        requestedRecipients: 0,
+        processedRecipients: 0,
+        processedFiles: 0,
+        missingFiles: [],
+      };
     }
 
-    await this.packageProcessor.prepare(
+    return this.packageProcessor.prepare(
       packages,
       resolvedSourceDir,
       outputDir,
