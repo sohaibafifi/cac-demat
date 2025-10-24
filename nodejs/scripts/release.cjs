@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -25,18 +26,22 @@ function checkGitStatus() {
     const status = execSync('git status --porcelain', { encoding: 'utf8', stdio: 'pipe' });
     const lines = status.trim().split('\n').filter(line => line.trim());
 
-    // Check if only package.json is modified
-    const onlyPackageJson = lines.every(line => line.includes('package.json'));
+    // Filter out untracked files (lines starting with ??)
+    const trackedChanges = lines.filter(line => !line.startsWith('??'));
 
-    if (lines.length > 0 && !onlyPackageJson) {
-      console.error('\n❌ You have uncommitted changes other than package.json.');
+    // Check if only package.json is modified (among tracked files)
+    const onlyPackageJson = trackedChanges.every(line => line.includes('package.json'));
+
+    if (trackedChanges.length > 0 && !onlyPackageJson) {
+      console.error('\n❌ You have uncommitted changes to tracked files (other than package.json).');
       console.error('Please commit or stash them before releasing.\n');
-      console.log('Changed files:');
-      console.log(status);
+      console.log('Changed tracked files:');
+      trackedChanges.forEach(line => console.log(`  ${line}`));
+      console.log('\nNote: Untracked files (new files) are OK and will be ignored.\n');
       process.exit(1);
     }
 
-    return lines.length > 0;
+    return trackedChanges.length > 0;
   } catch (error) {
     console.error('❌ Git is not initialized or not available.');
     process.exit(1);
