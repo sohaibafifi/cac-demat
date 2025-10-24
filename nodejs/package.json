@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
+  "homepage": "https://www.univ-artois.fr",
+  "author": {
+    "name": "Université d'Artois",
+    "email": "dsi@univ-artois.fr"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/univ-artois/cac-demat"
+  },
   "main": "main.cjs",
   "scripts": {
     "build": "node scripts/clean-dist.cjs && tsc && node scripts/copy-electron-assets.cjs && node scripts/optimize-size.cjs",
@@ -11,7 +20,10 @@
     "lint": "eslint .",
     "dev": "npm run electron",
     "electron": "npm run build && electron .",
-    "electron:package": "npm run build && electron-builder",
+    "electron:package": "npm run build && electron-builder -mwl",
+    "electron:package:mac": "npm run build && electron-builder --mac",
+    "electron:package:win": "npm run build && electron-builder --win",
+    "electron:package:linux": "npm run build && electron-builder --linux",
     "publish": "electron-forge publish",
     "prune": "npm prune --production",
     "optimize": "node scripts/optimize-size.cjs",
@@ -84,6 +96,15 @@
           ]
         }
       ]
+    },
+    "linux": {
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "maintainer": "Université d'Artois"
     },
     "afterPack": "./scripts/after-pack.cjs"
   }
