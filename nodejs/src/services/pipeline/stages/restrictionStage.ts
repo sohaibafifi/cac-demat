@@ -1,30 +1,10 @@
-import { mkdir, stat } from 'fs/promises';
+import { mkdir } from 'fs/promises';
 import path from 'path';
 import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingStage.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { PasswordGenerator } from '../../../support/security/passwordGenerator.js';
 import { runCommand } from '../../../utils/process.js';
-
-const ensureFile = async (candidate: string): Promise<void> => {
-  const info = await stat(candidate);
-  if (!info.isFile()) {
-    throw new Error(`Fichier PDF introuvable: ${candidate}`);
-  }
-};
-
-const streamLines = (logger: PipelineLogger | undefined, chunk: string): void => {
-  if (!logger) {
-    return;
-  }
-
-  for (const line of chunk.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed !== '') {
-      logger(`[qpdf] ${trimmed}`);
-    }
-  }
-};
 
 export class RestrictionStage implements PdfProcessingStage {
   constructor(
@@ -39,7 +19,7 @@ export class RestrictionStage implements PdfProcessingStage {
     await this.applyRestrictions(context.workingPath, finalPath, password, logger);
 
     if (context.useDefaultLogging) {
-      this.log(logger, `Processed ${context.relativePath} for ${context.recipient} (owner password: ${password})`);
+      logger?.(`Processed ${context.relativePath} for ${context.recipient} (owner password: ${password})`);
     }
 
     return context.withWorkingPath(finalPath, false).withPassword(password);
@@ -51,8 +31,6 @@ export class RestrictionStage implements PdfProcessingStage {
     password: string,
     logger?: PipelineLogger,
   ): Promise<void> {
-    await ensureFile(inputPath);
-
     await mkdir(path.dirname(outputPath), { recursive: true });
     const command = await this.commandResolver.resolve();
 
@@ -72,8 +50,18 @@ export class RestrictionStage implements PdfProcessingStage {
         outputPath,
       ],
       {
-        onStdout: (chunk) => streamLines(logger, chunk),
-        onStderr: (chunk) => streamLines(logger, chunk),
+        onStdout: (chunk) => {
+          for (const line of chunk.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed) logger?.(`[qpdf] ${trimmed}`);
+          }
+        },
+        onStderr: (chunk) => {
+          for (const line of chunk.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed) logger?.(`[qpdf] ${trimmed}`);
+          }
+        },
       },
     );
 
@@ -81,9 +69,5 @@ export class RestrictionStage implements PdfProcessingStage {
       const error = result.stderr.trim() || result.stdout.trim();
       throw new Error(error || 'Échec de l\'application des restrictions.');
     }
-  }
-
-  private log(logger: PipelineLogger | undefined, message: string): void {
-    logger?.(message);
   }
 }

@@ -81,31 +81,30 @@ export class WorkspaceService {
   }
 
   private async walk(root: string, visitor: (relative: string, type: InventoryEntry['type']) => Promise<void>): Promise<void> {
-    const entries = await readdir(root, { withFileTypes: true });
+    const walkRecursive = async (currentDir: string): Promise<void> => {
+      const entries = await readdir(currentDir, { withFileTypes: true });
 
-    for (const dirent of entries) {
-      const relative = path.relative(root, path.join(root, dirent.name)).split(path.sep).join('/');
-      if (!relative) {
-        continue;
+      for (const dirent of entries) {
+        const fullPath = path.join(currentDir, dirent.name);
+        const relative = path.relative(root, fullPath).split(path.sep).join('/');
+
+        if (!relative) continue;
+
+        let type: InventoryEntry['type'] = 'other';
+        if (dirent.isDirectory()) {
+          type = 'directory';
+          await visitor(relative, type);
+          // Recursively walk subdirectories
+          await walkRecursive(fullPath);
+        } else if (dirent.isFile()) {
+          type = 'file';
+          await visitor(relative, type);
+        } else {
+          await visitor(relative, type);
+        }
       }
+    };
 
-      let type: InventoryEntry['type'];
-      if (dirent.isDirectory()) {
-        type = 'directory';
-      } else if (dirent.isFile()) {
-        type = 'file';
-      } else {
-        type = 'other';
-      }
-
-      await visitor(relative, type);
-
-      if (dirent.isDirectory()) {
-        const nestedRoot = path.join(root, dirent.name);
-        await this.walk(nestedRoot, async (nestedRelative, nestedType) => {
-          await visitor(`${dirent.name}/${nestedRelative}`, nestedType);
-        });
-      }
-    }
+    await walkRecursive(root);
   }
 }

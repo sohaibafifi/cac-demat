@@ -22,28 +22,17 @@ export class ReviewerPreparationService {
     collectionName: string,
     logger?: PipelineLogger,
   ): Promise<PreparationStats> {
-    const resolvedSourceDir = await this.resolveSourceDir(sourceDir);
+    const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
     const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir);
 
-    const normalisedPackages: PdfPackage[] = [];
-    for (const pkg of packages) {
-      const name = pkg.name?.trim?.() ?? '';
-      if (name === '') {
-        continue;
-      }
-
-      const files = (pkg.files ?? [])
-        .map((file) => (file ?? '').toString().trim())
-        .filter((file) => file !== '');
-
-      if (files.length === 0) {
-        continue;
-      }
-
-      normalisedPackages.push({ name, files });
-    }
+    const normalisedPackages: PdfPackage[] = packages
+      .map((pkg) => ({
+        name: pkg.name.trim(),
+        files: pkg.files.map((f) => f.trim()).filter((f) => f),
+      }))
+      .filter((pkg) => pkg.name && pkg.files.length > 0);
 
     if (normalisedPackages.length === 0) {
       return {
@@ -63,22 +52,8 @@ export class ReviewerPreparationService {
       logger,
       inventory,
       async (file: PdfInventoryEntry, recipient: string, _restricted: boolean, password: string | null) => {
-        const displayPassword = password ?? '';
-        this.log(logger, `Processed ${file.relative} for ${recipient} (owner password: ${displayPassword})`);
+        logger?.((`Processed ${file.relative} for ${recipient} (owner password: ${password || ''})`));
       },
     );
-  }
-
-  private async resolveSourceDir(sourceDir: string): Promise<string> {
-    const resolved = await realpath(sourceDir).catch(() => null);
-    if (!resolved) {
-      throw new Error(`Dossier source introuvable: ${sourceDir}`);
-    }
-
-    return resolved;
-  }
-
-  private log(logger: PipelineLogger | undefined, message: string): void {
-    logger?.(message);
   }
 }

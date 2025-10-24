@@ -60,9 +60,6 @@ export class DashboardCoordinator {
   log = 'Prêt.';
   status = 'En attente';
   running = false;
-  manualReviewerFile = '';
-  manualReviewerNames = '';
-  manualMemberName = '';
   cacName = '';
   lastReviewerOutputDir: string | null = null;
   lastMemberOutputDir: string | null = null;
@@ -214,87 +211,123 @@ export class DashboardCoordinator {
   }
 
   async runReviewers(): Promise<void> {
-    await this.executeRun('reviewers');
-  }
-
-  async runMembers(): Promise<void> {
-    await this.executeRun('members');
-  }
-
-  async executeRun(mode: RunMode): Promise<void> {
-    if (this.running) return;
+    if (this.running || !this.folder || this.reviewerPackages().length === 0 || !this.cacName.trim()) {
+      return;
+    }
 
     this.resetLog();
     this.appendLog('Initialisation du pipeline...');
+    this.running = true;
+    this.status = 'En cours...';
 
     try {
-      this.validateRunPrerequisites(mode);
+      const packages = this.reviewerPackages();
+      const outputDir = await this.workspace.resolveOutputPath(this.folder, 'rapporteurs');
 
-      this.running = true;
-      this.status = 'En cours...';
+      this.lastReviewerOutputDir = outputDir;
+      this.lastRunMode = 'reviewers';
+      this.appendLog('Préparation des packages rapporteurs...');
 
-      const logger = (message: string) => this.appendLog(message);
+      const stats = await this.reviewerService.prepare(
+        packages,
+        this.folder,
+        outputDir,
+        this.cacName,
+        (message: string) => this.appendLog(message)
+      );
 
-      if (mode === 'reviewers') {
-        await this.runReviewersPipeline(logger);
-      } else {
-        await this.runMembersPipeline(logger);
+      this.appendLog(`Dossier de sortie: ${outputDir}`);
+      this.runCounter += 1;
+
+      this.lastRunStats = {
+        runId: this.runCounter,
+        mode: 'reviewers',
+        requested: stats.requestedRecipients,
+        recipients: stats.processedRecipients,
+        files: stats.processedFiles,
+        missing: stats.missingFiles.length,
+        outputDir,
+      };
+
+      const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
+      this.appendLog(`Statistiques: ${summary}`);
+
+      if (stats.missingFiles.length > 0) {
+        this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
       }
 
       this.status = 'Terminé';
       this.appendLog('Pipeline terminé avec succès.');
     } catch (error) {
       this.status = 'Erreur';
-      this.appendLog(`Erreur: ${this.getErrorMessage(error)}`);
+      this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.running = false;
     }
   }
 
-  private validateRunPrerequisites(mode: RunMode): void {
-    if (!this.folder) {
-      throw new Error('Veuillez d\'abord sélectionner un dossier.');
+  async runMembers(): Promise<void> {
+    if (this.running || !this.folder || this.combinedMembers().length === 0 || !this.cacName.trim()) {
+      return;
     }
 
-    if (!this.cacName.trim()) {
-      throw new Error('Veuillez saisir le nom du CAC.');
-    }
+    this.resetLog();
+    this.appendLog('Initialisation du pipeline...');
+    this.running = true;
+    this.status = 'En cours...';
 
-    if (mode === 'reviewers' && this.reviewerPackages().length === 0) {
-      throw new Error('Aucune attribution de rapporteur disponible.');
-    }
+    try {
+      const entries = this.combinedMembers();
+      const outputDir = await this.workspace.resolveOutputPath(this.folder, 'membres');
 
-    if (mode === 'members' && this.combinedMembers().length === 0) {
-      throw new Error('Aucun membre disponible.');
+      this.lastMemberOutputDir = outputDir;
+      this.lastRunMode = 'members';
+      this.appendLog('Préparation des packages membres...');
+
+      const stats = await this.memberService.prepare(
+        entries,
+        this.folder,
+        outputDir,
+        this.cacName,
+        (message: string) => this.appendLog(message)
+      );
+
+      this.appendLog(`Dossier de sortie: ${outputDir}`);
+      this.runCounter += 1;
+
+      this.lastRunStats = {
+        runId: this.runCounter,
+        mode: 'members',
+        requested: stats.requestedRecipients,
+        recipients: stats.processedRecipients,
+        files: stats.processedFiles,
+        missing: stats.missingFiles.length,
+        outputDir,
+      };
+
+      const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
+      this.appendLog(`Statistiques: ${summary}`);
+
+      if (stats.missingFiles.length > 0) {
+        this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
+      }
+
+      this.status = 'Terminé';
+      this.appendLog('Pipeline terminé avec succès.');
+    } catch (error) {
+      this.status = 'Erreur';
+      this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.running = false;
     }
   }
 
-  private async runReviewersPipeline(logger: (message: string) => void): Promise<void> {
-    const packages = this.reviewerPackages();
-    const outputDir = await this.workspace.resolveOutputPath(this.folder!, 'rapporteurs');
-
-    this.lastReviewerOutputDir = outputDir;
-    this.lastRunMode = 'reviewers';
-    this.appendLog('Préparation des packages rapporteurs...');
-
-    const stats = await this.reviewerService.prepare(packages, this.folder!, outputDir, this.cacName, logger);
-
-    this.appendLog(`Dossier de sortie: ${outputDir}`);
-    this.applyRunStats('reviewers', outputDir, stats);
-  }
-
-  private async runMembersPipeline(logger: (message: string) => void): Promise<void> {
-    const entries = this.combinedMembers();
-    const outputDir = await this.workspace.resolveOutputPath(this.folder!, 'membres');
-
-    this.lastMemberOutputDir = outputDir;
-    this.lastRunMode = 'members';
-    this.appendLog('Préparation des packages membres...');
-
-    const stats = await this.memberService.prepare(entries, this.folder!, outputDir, this.cacName, logger);
-
-    this.appendLog(`Dossier de sortie: ${outputDir}`);
-    this.applyRunStats('members', outputDir, stats);
+  async executeRun(mode: RunMode): Promise<void> {
+    if (mode === 'reviewers') {
+      await this.runReviewers();
+    } else {
+      await this.runMembers();
+    }
   }
 
   private async refreshAvailableFiles(): Promise<void> {
@@ -320,43 +353,23 @@ export class DashboardCoordinator {
     const missing = this.workspace.findMissingFiles(assignments, this.availableFiles);
 
     if (shouldLog) {
-      missing.forEach((file) => this.appendLog(`⚠️ Fichier introuvable dans le dossier: ${file}`));
+      for (const file of missing) {
+        this.appendLog(`⚠️ Fichier introuvable dans le dossier: ${file}`);
+      }
     }
 
     this.missingReviewerFiles = missing;
   }
 
-  private applyRunStats(mode: RunMode, outputDir: string, stats: PreparationStats): void {
-    this.runCounter += 1;
-
-    this.lastRunStats = {
-      runId: this.runCounter,
-      mode,
-      requested: stats.requestedRecipients,
-      recipients: stats.processedRecipients,
-      files: stats.processedFiles,
-      missing: stats.missingFiles.length,
-      outputDir,
-    };
-
-    const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
-    this.appendLog(`Statistiques: ${summary}`);
-
-    if (stats.missingFiles.length > 0) {
-      this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
-    }
-  }
-
   private parseReviewerNames(reviewerNames: string | string[]): string[] {
-    const names = Array.isArray(reviewerNames) ? reviewerNames : reviewerNames.split(/[,;\n]/);
-    return names.map((name) => name.trim()).filter((name) => name !== '');
+    if (Array.isArray(reviewerNames)) {
+      return reviewerNames.map((n) => n.trim()).filter((n) => n);
+    }
+    return reviewerNames.split(/[,;\n]/).map((n) => n.trim()).filter((n) => n);
   }
 
   private parseFileList(filesRaw: string): string[] {
-    return (filesRaw ?? '')
-      .split(/[;,\n]/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '');
+    return filesRaw.split(/[;,\n]/).map((f) => f.trim()).filter((f) => f);
   }
 
   private resetLog(): void {

@@ -22,7 +22,7 @@ export class MemberPreparationService {
     collectionName: string,
     logger?: PipelineLogger,
   ): Promise<PreparationStats> {
-    const resolvedSourceDir = await this.resolveSourceDir(sourceDir);
+    const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
     const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir);
@@ -33,24 +33,18 @@ export class MemberPreparationService {
     const packages: PdfPackage[] = [];
 
     for (const entry of members) {
-      const name = entry.name?.trim?.() ?? '';
-      if (name === '') {
-        continue;
-      }
+      const name = entry.name.trim();
+      if (!name) continue;
 
-      const requested = (entry.files ?? [])
-        .map((value) => (value ?? '').toString().trim())
-        .filter((value) => value !== '');
+      const requested = (entry.files || []).map((f) => f.trim()).filter((f) => f);
 
-      let files: string[];
-      if (requested.length === 0) {
-        files = inventory.map((item) => item.relative);
-      } else {
-        files = this.resolveRequestedFiles(requested, inventory, logger);
-      }
+      // If no files specified, use all files
+      const files = requested.length === 0
+        ? inventory.map((item) => item.relative)
+        : this.resolveRequestedFiles(requested, inventory, logger);
 
       if (files.length === 0) {
-        this.log(logger, `Aucun fichier attribué pour le membre ${name}. Attribution ignorée.`);
+        logger?.(`Aucun fichier attribué pour le membre ${name}. Attribution ignorée.`);
         continue;
       }
 
@@ -77,81 +71,62 @@ export class MemberPreparationService {
     );
   }
 
-  private async resolveSourceDir(sourceDir: string): Promise<string> {
-    const resolved = await realpath(sourceDir).catch(() => null);
-    if (!resolved) {
-      throw new Error(`Dossier source introuvable: ${sourceDir}`);
-    }
-
-    return resolved;
-  }
-
   private resolveRequestedFiles(
     requested: string[],
     inventory: PdfInventoryEntry[],
     logger?: PipelineLogger,
   ): string[] {
-    const lookup = new Map<string, string>();
-    const indexed: Array<{ relative: string; lower: string }> = [];
-
-    for (const entry of inventory) {
-      const lower = entry.relative.toLowerCase();
-      lookup.set(lower, entry.relative);
-      indexed.push({ relative: entry.relative, lower });
-    }
-
+    const lookup = new Map(inventory.map((e) => [e.relative.toLowerCase(), e.relative]));
     const resolved: string[] = [];
 
-    for (const rawPath of requested) {
-      const normalised = this.normaliseRequestedPath(rawPath);
-      if (normalised === '') {
+    for (const pattern of requested) {
+      const trimmed = pattern.trim();
+      if (!trimmed) continue;
+
+      const lower = trimmed.toLowerCase();
+
+      // Special case: "." matches only root level files (no subdirectories)
+      if (trimmed === '.') {
+        const rootFiles = inventory.filter((e) => !e.relative.includes('/'));
+        resolved.push(...rootFiles.map((m) => m.relative));
         continue;
       }
 
-      const lower = normalised.toLowerCase();
-
+      // Exact file match
       if (lookup.has(lower)) {
         resolved.push(lookup.get(lower)!);
         continue;
       }
 
-      const folderCandidate = lower.replace(/\/$/, '');
-      if (folderCandidate !== '') {
-        const prefix = `${folderCandidate}/`;
-        const matches = indexed
-          .filter((item) => item.lower.startsWith(prefix))
-          .map((item) => item.relative);
+      // Folder match (e.g., "sample_1/" or "sample_1")
+      const folderPattern = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+      const folderMatches = inventory.filter((e) => {
+        const lowerRelative = e.relative.toLowerCase();
+        const lowerFolder = folderPattern.toLowerCase();
+        // Match files inside the folder (folder/file.pdf)
+        return lowerRelative.startsWith(lowerFolder + '/');
+      });
 
-        if (matches.length > 0) {
-          resolved.push(...matches);
-          continue;
-        }
+      if (folderMatches.length > 0) {
+        resolved.push(...folderMatches.map((m) => m.relative));
+        continue;
       }
 
-      this.log(logger, `Affectation CSV: aucun fichier ou dossier ne correspond à "${rawPath}".`);
+      // Wildcard match
+      if (trimmed.includes('*')) {
+        const regex = new RegExp('^' + trimmed.replace(/\*/g, '.*') + '$', 'i');
+        const matches = inventory.filter((e) => regex.test(e.relative));
+
+        if (matches.length > 0) {
+          resolved.push(...matches.map((m) => m.relative));
+        } else {
+          logger?.(`Aucun fichier correspondant au motif: ${trimmed}`);
+        }
+      } else {
+        logger?.(`Fichier introuvable: ${trimmed}`);
+      }
     }
 
-    const unique = Array.from(new Set(resolved));
-    unique.sort((a, b) => a.localeCompare(b));
-
-    return unique;
-  }
-
-  private normaliseRequestedPath(pathname: string): string {
-    const trimmed = pathname.trim();
-    if (trimmed === '') {
-      return '';
-    }
-
-    let normalised = trimmed.replace(/\\/g, '/');
-    normalised = normalised.replace(/\/+/g, '/');
-    normalised = normalised.replace(/^\.\/+/, '');
-    normalised = normalised.replace(/^\/+/, '');
-
-    return normalised;
-  }
-
-  private log(logger: PipelineLogger | undefined, message: string): void {
-    logger?.(message);
+    return [...new Set(resolved)];
   }
 }
