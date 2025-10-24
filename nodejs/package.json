@@ -6,13 +6,15 @@
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
   "main": "main.cjs",
   "scripts": {
-    "build": "node scripts/clean-dist.cjs && tsc && node scripts/copy-electron-assets.cjs",
+    "build": "node scripts/clean-dist.cjs && tsc && node scripts/copy-electron-assets.cjs && node scripts/optimize-size.cjs",
     "build:watch": "tsc --watch",
     "lint": "eslint .",
     "dev": "npm run electron",
     "electron": "npm run build && electron .",
     "electron:package": "npm run build && electron-builder",
-    "publish": "electron-forge publish"
+    "publish": "electron-forge publish",
+    "prune": "npm prune --production",
+    "optimize": "node scripts/optimize-size.cjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",
@@ -36,10 +38,13 @@
       "dist/**/*",
       "main.cjs",
       "package.json",
-      "node_modules/**/*", 
+      "!node_modules/**/*",
       "!data/**",
       "!**/__tests__/**",
-      "!**/*.test.*"
+      "!**/*.test.*",
+      "!**/*.map",
+      "!dist/**/*.map",
+      "!commands/lib/**/*.a"
     ],
     "asarUnpack": [
       "dist/resources/commands/**"
@@ -54,6 +59,8 @@
       "buildResources": "build",
       "output": "release"
     },
+    "compression": "maximum",
+    "removePackageScripts": true,
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
@@ -70,6 +77,7 @@
           ]
         }
       ]
-    }
+    },
+    "afterPack": "./scripts/after-pack.cjs"
   }
 }

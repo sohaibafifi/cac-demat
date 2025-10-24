@@ -14,7 +14,9 @@ const commandSourceCandidates = [
   path.join(projectRoot, '..', 'nativephp', 'resources', 'commands'),
 ];
 
-const copyDirectory = (source, destination) => {
+const platform = process.platform; // 'darwin', 'win32', 'linux'
+
+const copyDirectory = (source, destination, filterFn = null) => {
   if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
     return false;
   }
@@ -25,8 +27,13 @@ const copyDirectory = (source, destination) => {
     const srcPath = path.join(source, entry.name);
     const dstPath = path.join(destination, entry.name);
 
+    // Apply filter if provided
+    if (filterFn && !filterFn(srcPath, entry)) {
+      continue;
+    }
+
     if (entry.isDirectory()) {
-      copyDirectory(srcPath, dstPath);
+      copyDirectory(srcPath, dstPath, filterFn);
     } else if (entry.isSymbolicLink()) {
       const target = fs.readlinkSync(srcPath);
       fs.symlinkSync(target, dstPath);
@@ -65,8 +72,32 @@ try {
     }
 
     fs.rmSync(commandsDst, { recursive: true, force: true });
-    copied = copyDirectory(candidate, commandsDst);
+
+    // Filter function to copy only platform-specific and necessary files
+    const shouldCopy = (srcPath, entry) => {
+      const relativePath = path.relative(candidate, srcPath);
+      const parts = relativePath.split(path.sep);
+
+      // Always copy lib directory but exclude static libraries
+      if (parts[0] === 'lib') {
+        if (entry.isDirectory()) return true;
+        if (entry.name.endsWith('.a')) return false; // Exclude static libraries
+        if (entry.name.endsWith('.cmake')) return false;
+        return true;
+      }
+
+      // Only copy platform-specific directory
+      if (parts[0] === 'mac' || parts[0] === 'win' || parts[0] === 'linux') {
+        const platformDir = platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : 'linux';
+        return parts[0] === platformDir;
+      }
+
+      return true;
+    };
+
+    copied = copyDirectory(candidate, commandsDst, shouldCopy);
     if (copied) {
+      console.log(`✓ Copied commands for platform: ${platform}`);
       break;
     }
   }
@@ -75,6 +106,11 @@ try {
     const macBinary = path.join(commandsDst, 'mac', 'qpdf');
     if (fs.existsSync(macBinary)) {
       fs.chmodSync(macBinary, 0o755);
+    }
+
+    const winBinary = path.join(commandsDst, 'win', 'qpdf.exe');
+    if (fs.existsSync(winBinary)) {
+      fs.chmodSync(winBinary, 0o755);
     }
   }
 } catch (err) {

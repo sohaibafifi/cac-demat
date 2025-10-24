@@ -24,7 +24,29 @@ const packagerConfig = {
   },
   ignore: (filePath) => {
     const normalized = filePath.replace(/\\/g, '/');
-    return ignoredPatterns.some((pattern) => pattern.test(normalized));
+
+    // Ignore build directories
+    if (ignoredPatterns.some((pattern) => pattern.test(normalized))) {
+      return true;
+    }
+
+    // Ignore all node_modules (no dependencies needed at runtime)
+    if (normalized.includes('node_modules')) {
+      return true;
+    }
+
+    // Ignore source files
+    if (normalized.includes('/src/') || normalized.includes('tsconfig.json')) {
+      return true;
+    }
+
+    // Ignore unnecessary library files
+    if (normalized.includes('.a') && normalized.includes('commands/lib')) {
+      return true;
+    }
+
+    // Ignore map files
+    return normalized.endsWith('.map');
   },
   ...(iconExists ? { icon: baseIconPath } : {}),
 };
@@ -46,6 +68,9 @@ const config = {
     {
       name: '@electron-forge/maker-dmg',
       platforms: ['darwin'],
+      config: {
+        format: 'ULFO', // Use ULFO for better compression
+      },
     },
     {
       name: '@electron-forge/maker-squirrel',
