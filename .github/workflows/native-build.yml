@@ -62,9 +62,21 @@ jobs:
         working-directory: nativephp
         run: php artisan native:build ${{ matrix['build-os'] }}
 
-      - name: Clean unpacked build folders
+      - name: Clean unpacked build folders (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
         run: |
-          rm -rf nativephp/dist/mac nativephp/dist/mac-arm64 nativephp/dist/darwin-* nativephp/dist/win-* nativephp/dist/linux-* nativephp/dist/unpacked nativephp/dist/*-unpacked || true
+          rm -rf nativephp/dist/mac \
+                 nativephp/dist/mac-arm64 \
+                 nativephp/dist/darwin-* \
+                 nativephp/dist/unpacked \
+                 nativephp/dist/*-unpacked || true
+
+      - name: Clean unpacked build folders (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item -Path nativephp/dist/win*,nativephp/dist/unpacked,nativephp/dist/*-unpacked -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
