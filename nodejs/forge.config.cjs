@@ -124,9 +124,9 @@ const config = {
       name: '@electron-forge/maker-squirrel',
       platforms: ['win32'],
       config: {
-        name: 'cac_demat',
+        name: 'cac-demat-node',
         authors: 'Université d\'Artois',
-        setupExe: 'CAC-Demat-Setup.exe',
+        setupExe: 'cac-demat-node-setup.exe',
       },
     },
     {
