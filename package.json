@@ -13,8 +13,11 @@
     "release": "npm run release:node && npm run release:native",
     "release:node": "npm --prefix nodejs run release",
     "release:native": "npm --prefix nativephp run release",
-    "release:patch": "npm run version:patch && npm run release",
-    "release:minor": "npm run version:minor && npm run release",
-    "release:major": "npm run version:major && npm run release"
+    "release:patch": "npm run version:patch",
+    "release:minor": "npm run version:minor",
+    "release:major": "npm run version:major",
+    "publish": "npm run publish:node && npm run publish:native",
+    "publish:node": "npm --prefix nodejs run publish",
+    "publish:native": "npm --prefix nativephp run publish"
   }
 }

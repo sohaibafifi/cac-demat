@@ -35,8 +35,10 @@ Les deux workflows utilisent `secrets.GITHUB_TOKEN` : ils créent/complètent au
 | `npm run version:patch|minor|major` | Incrémente la version SemVer dans `nodejs/package.json` + `package-lock.json` **et** synchronise `nativephp/.env(.example)` et `nativephp/package.json`. |
 | `npm run build` | Construit les deux variantes en local (`electron:package` pour NodeJS, `php artisan native:build` via `--build-only` pour NativePHP). |
 | `npm run release` | Enchaîne les releases `nodejs` puis `nativephp` (sans increment). |
-| `npm run release:patch|minor|major` | Bump de version + release complète des deux apps. |
+| `npm run release:patch|minor|major` | Prépare la release : appel direct à `version:patch|minor|major` (bump synchronisé). À compléter par un commit puis `npm run release`. |
 | `npm run release:node` / `npm run release:native` | Déclenche uniquement la release Electron ou NativePHP. |
+| `npm run publish` | Exécute `npm run publish:node` puis `npm run publish:native` pour pousser les artefacts localement. |
+| `npm run publish:node` / `npm run publish:native` | Respectivement `npm --prefix nodejs run publish` (Electron Forge) et `npm --prefix nativephp run publish` (alias de `release`). |
 
 Ces scripts se trouvent dans `package.json` à la racine et peuvent être appelés depuis n’importe où (`npm --prefix nodejs run release`...).
 
@@ -45,26 +47,34 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 ## Procédure de release (NativePHP & NodeJS)
 
 1. **Préparer la version**
-   - Lancer `npm run version:patch|minor|major` à la racine (ou `npm --prefix nodejs run version:patch`). Cette commande met à jour `nodejs/package.json` + `package-lock.json`, puis synchronise `nativephp/.env(.example)` et `nativephp/package.json`.
+   - Lancer `npm run release:patch|minor|major` (ou `npm run version:patch|minor|major`). Cette commande met à jour `nodejs/package.json` + `package-lock.json`, puis synchronise `nativephp/.env(.example)` et `nativephp/package.json`.
    - Vérifier les variables `GITHUB_OWNER`, `GITHUB_REPO`, paramètres updater, etc.
 
-2. **Tester localement** : lint, tests, build rapide selon le module concerné.
+2. **Vérifier les changements Git**
+   - Inspecter `git status`.
+   - Ajouter/committer les fichiers de version : `nodejs/package.json`, `nodejs/package-lock.json`, `nativephp/.env.example`, `nativephp/package.json` (et laisser `.env` non versionné).
 
-3. **Commiter/pousser sur `main`** (ou la branche cible).
+3. **Tester localement** : lint, tests, build rapide (`npm run build`).
 
-4. **Créer un tag SemVer** sur le commit validé :
+4. **Pousser sur `main`** (ou la branche cible) et `git push`.
+
+5. **Créer un tag SemVer** sur le commit validé :
    ```bash
    git tag -a v1.4.0 -m "Release 1.4.0"
    git push origin v1.4.0
    ```
    Le `push` déclenche automatiquement les deux workflows.
 
-5. **Suivre les Actions**
+6. **Lancer la release/publish locale (optionnel)** :
+   - `npm run release` pour exécuter les release scripts NodeJS + NativePHP (build + tag + publish GitHub si configuré).
+   - `npm run publish` si vous souhaitez forcer immédiatement la publication via Electron Forge + `native:publish`.
+
+7. **Suivre les Actions**
    - Jobs NativePHP : `NativePHP (macOS)` / `NativePHP (windows)`.
    - Jobs NodeJS : `Electron (macOS|Windows)` + `Electron Publish`.
    - Chaque job publie un résumé et dépose ses artefacts (binaries, archives, etc.).
 
-6. **Finaliser la release GitHub**
+8. **Finaliser la release GitHub**
    - Une release `vX.Y.Z` est créée en mode **brouillon** si elle n’existe pas, ou enrichie sinon.
    - Relisez les notes automatiques d’Electron/NativePHP, ajoutez vos commentaires, puis passez la release en “Publish”.
 
@@ -80,12 +90,18 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 
 ## Générer les packages en local (sans GitHub Actions)
 
-Il est parfois utile de produire les exécutables en local (tests rapides, démos hors connexion, validation avant de créer un tag). Les deux variantes peuvent être empaquetées manuellement.
+Le flux “root build” permet de reproduire les artefacts des workflows Actions directement sur votre machine :
 
-### NativePHP
+| Commande | Effet |
+| --- | --- |
+| `npm run build` | Lance `npm run build:node` **puis** `npm run build:native`. |
+| `npm run build:node` | Exécute `npm --prefix nodejs run electron:package` (packages Electron dans `nodejs/dist/`). |
+| `npm run build:native` | Exécute `node nativephp/scripts/native-release.cjs --build-only` (packages NativePHP dans `nativephp/dist/` sans publication). |
+
+### NativePHP (détails)
 
 1. **Prérequis** : PHP 8.3, Composer, Node/npm (pour les assets front), dépendances NativePHP.
-2. **Installer et préparer** :
+2. **Installer et préparer** (si nécessaire, sinon utilisez directement `npm run build:native`) :
    ```bash
    cd nativephp
    composer install --no-interaction --prefer-dist
@@ -97,34 +113,31 @@ Il est parfois utile de produire les exécutables en local (tests rapides, démo
    ```bash
    php artisan native:build mac   # ou win / linux
    ```
-   Les binaires sont générés dans `nativephp/dist/<plateforme>/`.
-4. **Optionnel : publier sans GitHub**  
-   Si vous ne souhaitez qu’un package local, arrêtez-vous après `native:build`. La commande `native:publish` suppose une configuration updater (GitHub/S3). Vous pouvez néanmoins la lancer en pointant vers un dépôt de test ou en gardant `NATIVEPHP_UPDATER_ENABLED=false`.  
-   > Astuce : `npm run build:native` (à la racine) exécute `node nativephp/scripts/native-release.cjs --build-only`, ce qui prépare l’environnement et lance `native:build` sans publication.
+   Les binaires sont générés dans `nativephp/dist/<plateforme>/`. `npm run build:native` automatise ces étapes (copie .env, génération de clé, build multi-plateformes selon l’OS courant) sans exécuter `native:publish`.  
+4. **Publier manuellement (optionnel)** : si vous souhaitez pousser la release vous-même, lancez `php artisan native:publish <cible>` ou `npm --prefix nativephp run release` (sans `--build-only`).
 
-### NodeJS / Electron
+### NodeJS / Electron (détails)
 
-1. **Prérequis** : Node 22, npm, outils natives (Xcode pour macOS, Visual Studio Build Tools pour Windows). Certaines cibles ne peuvent être construites que sur l’OS correspondant.
-2. **Installer et préparer** :
+1. **Prérequis** : Node 22, npm, toolchains natives (Xcode pour macOS, Visual Studio Build Tools pour Windows). Certaines cibles ne peuvent être construites que depuis l’OS correspondant.
+2. **Installer et préparer** (si vous n’utilisez pas `npm run build:node`) :
    ```bash
    cd nodejs
    npm ci
    ```
 3. **Construire les packages** :
-   - Tous les OS (depuis macOS avec Xcode et `wine` installés) :
-     ```bash
-     npm run electron:package
-     ```
-   - Cibles spécifiques (exemples) :
-     ```bash
-     npm run electron:package:mac
-     npm run electron:package:win
-     npm run electron:package:linux
-     ```
-   Les fichiers apparaissent sous `nodejs/dist/` puis dans `nodejs/release/` selon la configuration d’`electron-builder`.
-   > Astuce : `npm run build:node` (à la racine) exécute `npm --prefix nodejs run electron:package`.
-4. **Vérifier le résultat** : installez/ouvrez le binaire localement. Une fois validé, vous pouvez exécuter `npm run publish` avec un token personnel (`GH_TOKEN`) pour pousser la release sans attendre GitHub Actions.
+   ```bash
+   npm run electron:package        # multi-cibles selon la config electron-builder
+   npm run electron:package:mac
+   npm run electron:package:win
+   npm run electron:package:linux
+   ```
+   Les fichiers apparaissent dans `nodejs/dist/` puis `nodejs/release/`. `npm run build:node` encapsule simplement `npm --prefix nodejs run electron:package`.
+4. **Publier manuellement (optionnel)** :
+   ```bash
+   GH_TOKEN=... npm run publish
+   ```
+   Ceci pousse la release GitHub sans passer par Actions si nécessaire.
 
-> 💡 Le script `npm run release` enchaîne version bump + build + package. Utilisez-le si vous voulez simuler la release complète localement avant de pusher.
+   > 💡 `npm run release` (racine) enchaîne les scripts de publication NodeJS puis NativePHP (sans bump). Couplez-le avec `npm run release:patch|minor|major` + un commit pour reproduire le pipeline complet en local.
 
 ---
