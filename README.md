@@ -58,23 +58,16 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 
 4. **Pousser sur `main`** (ou la branche cible) et `git push`.
 
-5. **Créer un tag SemVer** sur le commit validé :
-   ```bash
-   git tag -a v1.4.0 -m "Release 1.4.0"
-   git push origin v1.4.0
-   ```
-   Le `push` déclenche automatiquement les deux workflows.
-
-6. **Lancer la release/publish locale (optionnel)** :
+5. **Lancer la release/publish locale (optionnel)** :
    - `npm run release` pour exécuter les release scripts NodeJS + NativePHP (build + tag + publish GitHub si configuré).
    - `npm run publish` si vous souhaitez forcer immédiatement la publication via Electron Forge + `native:publish`.
 
-7. **Suivre les Actions**
+6. **Suivre les Actions**
    - Jobs NativePHP : `NativePHP (macOS)` / `NativePHP (windows)`.
    - Jobs NodeJS : `Electron (macOS|Windows)` + `Electron Publish`.
    - Chaque job publie un résumé et dépose ses artefacts (binaries, archives, etc.).
 
-8. **Finaliser la release GitHub**
+7. **Finaliser la release GitHub**
    - Une release `vX.Y.Z` est créée en mode **brouillon** si elle n’existe pas, ou enrichie sinon.
    - Relisez les notes automatiques d’Electron/NativePHP, ajoutez vos commentaires, puis passez la release en “Publish”.
 
