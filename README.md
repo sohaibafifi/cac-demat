@@ -49,6 +49,11 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 1. **Préparer la version**
    - Lancer `npm run release:patch|minor|major` (ou `npm run version:patch|minor|major`). Cette commande met à jour `nodejs/package.json` + `package-lock.json`, puis synchronise `nativephp/.env(.example)` et `nativephp/package.json`.
    - Vérifier les variables `GITHUB_OWNER`, `GITHUB_REPO`, paramètres updater, etc.
+   - Pour la notarisation macOS, renseigner dans `nativephp/.env` :  
+     `NATIVEPHP_APPLE_ID` (identifiant Apple Developer),  
+     `NATIVEPHP_APPLE_ID_PASS` (mot de passe d'application),  
+     `NATIVEPHP_APPLE_TEAM_ID` (Team ID).  
+     Sans ces valeurs, `native:publish mac` échoue avec l'erreur « appleId property is required… ». Utilisez alors uniquement `npm run build:native` (build-only) ou lancez la release sur un poste configuré.
 
 2. **Vérifier les changements Git**
    - Inspecter `git status`.
@@ -78,6 +83,16 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 - **Privilégier NodeJS pour Windows** : l’appli Electron reste plus légère et rapide.
 - **Tags = vérité** : utilisez toujours des tags `vX.Y.Z`. Ils verrouillent le commit and identifient les builds auto-update.
 - **Artefacts Actions** : téléchargez-les depuis l’onglet “Artifacts” si vous voulez tester un binaire sans attendre la publication officielle.
+
+### Notarisation macOS (NativePHP)
+
+- La commande `npm run release:native` (ou `php artisan native:publish mac`) tente de notariser l’application via Apple.  
+- Renseignez obligatoirement dans `nativephp/.env` (et `.env.example`) :  
+  `NATIVEPHP_APPLE_ID` = email du compte Apple Developer,  
+  `NATIVEPHP_APPLE_ID_PASS` = mot de passe spécifique d’application,  
+  `NATIVEPHP_APPLE_TEAM_ID` = identifiant d’équipe (10 caractères).  
+- Sans ces valeurs, `@electron/notarize` renvoie l’erreur « The appleId property is required… ».  
+- Si vous ne disposez pas des identifiants, limitez-vous à `npm run build:native` (build-only) ou exécutez la release macOS sur un poste configuré avec ces credentials.
 
 ---
 

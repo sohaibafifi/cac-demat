@@ -10,49 +10,7 @@ permissions:
   contents: write
 
 jobs:
-
   electron-build:
-    name: Electron (${{ matrix.label }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            label: macOS
-            npm-args: '-- --mac zip'
-            artifact-name: electron-mac
-          - os: windows-latest
-            label: Windows
-            npm-args: '-- --win portable'
-            artifact-name: electron-windows
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: nodejs/package-lock.json
-
-      - name: Install Node dependencies
-        working-directory: nodejs
-        run: npm ci
-
-      - name: Build Electron app
-        working-directory: nodejs
-        run: npm run electron:package ${{ matrix.npm-args }}
-
-      - name: Upload Electron artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: nodejs/dist/**
-
-  electron-publish:
     name: Electron Publish (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     strategy:
