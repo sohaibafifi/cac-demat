@@ -62,11 +62,28 @@ jobs:
         working-directory: nativephp
         run: php artisan native:build ${{ matrix['build-os'] }}
 
+      - name: Clean unpacked build folders
+        run: |
+          rm -rf nativephp/dist/mac nativephp/dist/mac-arm64 nativephp/dist/darwin-* nativephp/dist/win-* nativephp/dist/linux-* nativephp/dist/unpacked nativephp/dist/*-unpacked || true
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nativephp-${{ matrix.artifact-suffix }}
-          path: nativephp/dist/**
+          path: |
+            nativephp/dist/*.zip
+            nativephp/dist/*.zip.blockmap
+            nativephp/dist/*.dmg
+            nativephp/dist/*.dmg.blockmap
+            nativephp/dist/*.exe
+            nativephp/dist/*.msi
+            nativephp/dist/*.AppImage
+            nativephp/dist/*.deb
+            nativephp/dist/*-mac.yml
+            nativephp/dist/*-win.yml
+            nativephp/dist/*.yml
+          if-no-files-found: error
+          compression-level: 6
       
       - name: Publish build artifacts
         working-directory: nativephp
