@@ -27,9 +27,9 @@
     "publish": "electron-forge publish",
     "prune": "npm prune --production",
     "optimize": "node scripts/optimize-size.cjs",
-    "version:patch": "node scripts/bump-version.cjs patch",
-    "version:minor": "node scripts/bump-version.cjs minor",
-    "version:major": "node scripts/bump-version.cjs major",
+    "version:patch": "node ../scripts/bump-version.cjs patch",
+    "version:minor": "node ../scripts/bump-version.cjs minor",
+    "version:major": "node ../scripts/bump-version.cjs major",
     "release": "node scripts/release.cjs",
     "release:patch": "npm run version:patch && npm run release",
     "release:minor": "npm run version:minor && npm run release",
@@ -51,7 +51,7 @@
   },
   "build": {
     "appId": "fr.univ-artois.cac-demat",
-    "productName": "CAC Demat",
+    "productName": "cac-demat-node",
     "copyright": "Copyright © 2025 Université d'Artois",
     "files": [
       "dist/**/*",

@@ -1,6 +1,6 @@
 {
     "name": "cac-demat",
-    "version": "0.0.2",
+    "version": "0.1.6",
     "description": "Application de de dématérialisation des CAC pour l'Université d'Artois",
     "main": "./out/main/index.js",
     "author": "DSI - Université d'Artois",
@@ -39,7 +39,11 @@
         "plugin:build": "rimraf electron-plugin/dist/ && node node_modules/typescript/bin/tsc --project electron-plugin",
         "plugin:build:watch": "npm run plugin:build -- -W",
         "plugin:test": "vitest run --root electron-plugin --coverage.all",
-        "plugin:test:watch": "vitest watch --root electron-plugin  --coverage.all"
+        "plugin:test:watch": "vitest watch --root electron-plugin  --coverage.all",
+        "release": "node scripts/native-release.cjs",
+        "release:patch": "node ../scripts/bump-version.cjs patch && npm run release",
+        "release:minor": "node ../scripts/bump-version.cjs minor && npm run release",
+        "release:major": "node ../scripts/bump-version.cjs major && npm run release"
     },
     "dependencies": {
         "@electron-toolkit/preload": "^3.0.1",

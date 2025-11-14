@@ -1,0 +1,20 @@
+{
+  "name": "cac-demat-monorepo",
+  "private": true,
+  "version": "0.1.6",
+  "description": "Scripts racine pour orchestrer les releases NodeJS & NativePHP",
+  "scripts": {
+    "version:patch": "node scripts/bump-version.cjs patch",
+    "version:minor": "node scripts/bump-version.cjs minor",
+    "version:major": "node scripts/bump-version.cjs major",
+    "build": "npm run build:node && npm run build:native",
+    "build:node": "npm --prefix nodejs run electron:package",
+    "build:native": "node nativephp/scripts/native-release.cjs --build-only",
+    "release": "npm run release:node && npm run release:native",
+    "release:node": "npm --prefix nodejs run release",
+    "release:native": "npm --prefix nativephp run release",
+    "release:patch": "npm run version:patch && npm run release",
+    "release:minor": "npm run version:minor && npm run release",
+    "release:major": "npm run version:major && npm run release"
+  }
+}
