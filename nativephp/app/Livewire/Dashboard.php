@@ -11,6 +11,8 @@ use App\Services\Pipeline\MemberPreparationService;
 use App\Services\Pipeline\ReviewerPreparationService;
 use App\Services\Workspace\WorkspaceService;
 use Native\Laravel\Dialog;
+use Native\Laravel\Facades\Notification;
+use Native\Laravel\Facades\Shell;
 use RuntimeException;
 
 class Dashboard extends Component
@@ -31,16 +33,23 @@ class Dashboard extends Component
     public string $manualReviewerFile = '';
     public string $manualReviewerNames = '';
     public string $manualMemberName = '';
+    public string $manualMemberFiles = '';
     public string $cacName = '';
+    public ?string $lastReviewerOutputDir = null;
+    public ?string $lastMemberOutputDir = null;
+    public ?array $lastRunStats = null;
+    public ?string $lastRunMode = null;
     public bool $reviewerListOpen = false;
     public bool $memberListOpen = false;
     public bool $activityCollapsed = true;
     public string $assignmentTab = 'reviewers';
     public string $activityTab = 'log';
+    protected int $runCounter = 0;
     protected ReviewerPreparationService $reviewerService;
     protected MemberPreparationService $memberService;
     protected CsvAssignmentLoader $csvLoader;
     protected WorkspaceService $workspace;
+    protected ?int $lastNotificationRunId = null;
 
     public function render()
     {
@@ -289,12 +298,21 @@ class Dashboard extends Component
             $this->appendLog('Veuillez saisir un nom de membre.');
             return;
         }
+
+        $files = collect(preg_split('/[;,\\n]/', $this->manualMemberFiles ?? ''))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $this->membersManual[] = [
             'name' => $name,
             'source' => 'manual',
-            'files' => [],
+            'files' => $files,
         ];
         $this->manualMemberName = '';
+        $this->manualMemberFiles = '';
         $this->appendLog("Membre manuel ajouté: {$name}");
     }
 
@@ -344,6 +362,16 @@ class Dashboard extends Component
         $this->executeRun('members');
     }
 
+    public function openLastReviewerOutput(): void
+    {
+        $this->openDirectory($this->lastReviewerOutputDir, 'rapporteurs');
+    }
+
+    public function openLastMemberOutput(): void
+    {
+        $this->openDirectory($this->lastMemberOutputDir, 'membres');
+    }
+
     protected function executeRun(string $mode): void
     {
         if ($this->running) {
@@ -386,13 +414,21 @@ class Dashboard extends Component
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'rapporteurs');
 
                 $this->appendLog('Préparation des packages rapporteurs...');
-                $this->reviewerService->prepare($packages, $this->folder, $outputDir, $collectionName, $logger);
+                $stats = $this->reviewerService->prepare($packages, $this->folder, $outputDir, $collectionName, $logger);
+
+                $this->lastReviewerOutputDir = $outputDir;
+                $this->appendLog("Dossier de sortie: {$outputDir}");
+                $this->applyRunStats($stats, 'reviewers', $outputDir);
             } else {
                 $entries = $this->combinedMembers();
                 $outputDir = $this->workspace->resolveOutputPath($this->folder, 'membres');
 
                 $this->appendLog('Préparation des packages membres...');
-                $this->memberService->prepare($entries, $this->folder, $outputDir, $collectionName, $logger);
+                $stats = $this->memberService->prepare($entries, $this->folder, $outputDir, $collectionName, $logger);
+
+                $this->lastMemberOutputDir = $outputDir;
+                $this->appendLog("Dossier de sortie: {$outputDir}");
+                $this->applyRunStats($stats, 'members', $outputDir);
             }
 
             $this->status = 'Terminé';
@@ -422,6 +458,39 @@ class Dashboard extends Component
         if ($this->reviewersFromCsv !== [] || $this->reviewersManual !== []) {
             $this->checkReviewerFileWarnings(false);
         }
+    }
+
+    protected function applyRunStats(array $stats, string $mode, string $outputDir): void
+    {
+        $requested = (int) ($stats['requested_recipients'] ?? 0);
+        $processed = (int) ($stats['processed_recipients'] ?? 0);
+        $files = (int) ($stats['processed_files'] ?? 0);
+        $missing = collect($stats['missing_files'] ?? [])->filter()->values()->all();
+
+        $this->runCounter++;
+        $this->lastRunMode = $mode;
+        $this->lastRunStats = [
+            'run_id' => $this->runCounter,
+            'mode' => $mode,
+            'requested' => $requested,
+            'recipients' => $processed,
+            'files' => $files,
+            'missing' => count($missing),
+            'output_dir' => $outputDir,
+        ];
+
+        $this->appendLog(sprintf(
+            'Statistiques: %d/%d destinataire(s), %d fichier(s) généré(s).',
+            $processed,
+            $requested,
+            $files
+        ));
+
+        if ($missing !== []) {
+            $this->appendLog(sprintf('⚠️ %d fichier(s) introuvable(s) ignoré(s).', count($missing)));
+        }
+
+        $this->maybeNotifyCompletion();
     }
 
     protected function reviewerPackages(): array
@@ -478,5 +547,58 @@ class Dashboard extends Component
         }
 
         $this->missingReviewerFiles = $missing;
+    }
+
+    protected function openDirectory(?string $path, string $label): void
+    {
+        if (! $path || ! is_dir($path)) {
+            $this->appendLog(sprintf('Aucun dossier de sortie %s disponible.', $label));
+            return;
+        }
+
+        try {
+            Shell::showInFolder($path);
+        } catch (\Throwable $e) {
+            $this->appendLog('Impossible d\'ouvrir le dossier: '.$e->getMessage());
+        }
+    }
+
+    protected function maybeNotifyCompletion(): void
+    {
+        if (! $this->lastRunStats) {
+            return;
+        }
+
+        $runId = (int) ($this->lastRunStats['run_id'] ?? 0);
+        if ($runId !== 0 && $runId === $this->lastNotificationRunId) {
+            return;
+        }
+
+        $this->lastNotificationRunId = $runId;
+
+        $modeLabel = $this->lastRunStats['mode'] === 'reviewers' ? 'rapporteurs' : 'membres';
+        $segments = [
+            sprintf('%d/%d destinataire(s)', $this->lastRunStats['recipients'], $this->lastRunStats['requested']),
+            sprintf('%d fichier(s) généré(s)', $this->lastRunStats['files']),
+        ];
+
+        if (($this->lastRunStats['missing'] ?? 0) > 0) {
+            $segments[] = sprintf('%d fichier(s) introuvable(s) ignoré(s)', $this->lastRunStats['missing']);
+        }
+
+        $message = implode("\n", [
+            sprintf('Préparation %s terminée.', $modeLabel),
+            implode(', ', $segments),
+            'Dossier: '.$this->lastRunStats['output_dir'],
+        ]);
+
+        try {
+            Notification::new()
+                ->title('CAC Demat')
+                ->message($message)
+                ->show();
+        } catch (\Throwable $e) {
+            $this->appendLog('Notification indisponible: '.$e->getMessage());
+        }
     }
 }

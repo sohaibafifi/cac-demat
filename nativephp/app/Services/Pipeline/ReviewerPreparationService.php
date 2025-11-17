@@ -15,8 +15,9 @@ class ReviewerPreparationService
 
     /**
      * @param array<int, array{name: string, files: array<int, string>}> $packages
+     * @return array{requested_recipients: int, processed_recipients: int, processed_files: int, missing_files: array<int, string>}
      */
-    public function prepare(array $packages, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): void
+    public function prepare(array $packages, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): array
     {
         $resolvedSourceDir = realpath($sourceDir);
         if ($resolvedSourceDir === false || ! is_dir($resolvedSourceDir)) {
@@ -48,10 +49,15 @@ class ReviewerPreparationService
         }
 
         if ($normalisedPackages === []) {
-            return;
+            return [
+                'requested_recipients' => count($packages),
+                'processed_recipients' => 0,
+                'processed_files' => 0,
+                'missing_files' => [],
+            ];
         }
 
-        $this->packageProcessor->prepare(
+        return $this->packageProcessor->prepare(
             $normalisedPackages,
             $resolvedSourceDir,
             $outputDir,

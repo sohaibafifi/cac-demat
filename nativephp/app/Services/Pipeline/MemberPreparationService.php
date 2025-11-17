@@ -13,7 +13,10 @@ class MemberPreparationService
     ) {
     }
 
-    public function prepare(array $members, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): void
+    /**
+     * @return array{requested_recipients: int, processed_recipients: int, processed_files: int, missing_files: array<int, string>}
+     */
+    public function prepare(array $members, string $sourceDir, string $outputDir, string $collectionName, ?callable $logger = null): array
     {
         $resolvedSourceDir = realpath($sourceDir);
         if ($resolvedSourceDir === false || ! is_dir($resolvedSourceDir)) {
@@ -58,10 +61,15 @@ class MemberPreparationService
         }
 
         if ($packages === []) {
-            return;
+            return [
+                'requested_recipients' => 0,
+                'processed_recipients' => 0,
+                'processed_files' => 0,
+                'missing_files' => [],
+            ];
         }
 
-        $this->packageProcessor->prepare(
+        return $this->packageProcessor->prepare(
             $packages,
             $resolvedSourceDir,
             $outputDir,
@@ -81,20 +89,46 @@ class MemberPreparationService
     {
         $lookup = [];
         $indexed = [];
+        $rootLevel = [];
 
         foreach ($inventory as $entry) {
-            $lower = strtolower($entry['relative']);
-            $lookup[$lower] = $entry['relative'];
+            $relative = $entry['relative'];
+            $lower = strtolower($relative);
+            $lookup[$lower] = $relative;
             $indexed[] = [
-                'relative' => $entry['relative'],
+                'relative' => $relative,
                 'lower' => $lower,
             ];
+
+            if (! str_contains($relative, '/')) {
+                $rootLevel[] = $relative;
+            }
         }
 
         $resolved = [];
 
         foreach ($requested as $rawPath) {
-            $normalised = $this->normaliseRequestedPath($rawPath);
+            $trimmed = trim((string) $rawPath);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if ($trimmed === '.') {
+                $resolved = array_merge($resolved, $rootLevel);
+                continue;
+            }
+
+            if (str_contains($trimmed, '*')) {
+                $matches = $this->matchWildcardEntries($trimmed, $inventory);
+                if ($matches === []) {
+                    $this->log($logger, sprintf('Aucun fichier correspondant au motif: %s', $trimmed));
+                } else {
+                    $resolved = array_merge($resolved, $matches);
+                }
+                continue;
+            }
+
+            $normalised = $this->normaliseRequestedPath($trimmed);
             if ($normalised === '') {
                 continue;
             }
@@ -106,25 +140,14 @@ class MemberPreparationService
                 continue;
             }
 
-            $folderMatches = [];
-            $folderCandidate = rtrim($lower, '/');
-
-            if ($folderCandidate !== '') {
-                $prefix = $folderCandidate.'/';
-
-                foreach ($indexed as $item) {
-                    if (str_starts_with($item['lower'], $prefix)) {
-                        $folderMatches[] = $item['relative'];
-                    }
-                }
-            }
+            $folderMatches = $this->matchFolderEntries($normalised, $indexed);
 
             if ($folderMatches !== []) {
                 $resolved = array_merge($resolved, $folderMatches);
                 continue;
             }
 
-            $this->log($logger, sprintf('Affectation CSV: aucun fichier ou dossier ne correspond à "%s".', $rawPath));
+            $this->log($logger, sprintf('Fichier introuvable: %s', $trimmed));
         }
 
         $resolved = array_values(array_unique($resolved));
@@ -146,6 +169,55 @@ class MemberPreparationService
         $normalised = ltrim($normalised, '/');
 
         return $normalised;
+    }
+
+    /**
+     * @param array<int, array{relative: string, lower: string}> $indexed
+     * @return array<int, string>
+     */
+    protected function matchFolderEntries(string $folder, array $indexed): array
+    {
+        $normalised = rtrim($this->normaliseRequestedPath($folder), '/');
+        if ($normalised === '') {
+            return [];
+        }
+
+        $prefix = strtolower($normalised).'/';
+        $matches = [];
+
+        foreach ($indexed as $item) {
+            if (str_starts_with($item['lower'], $prefix)) {
+                $matches[] = $item['relative'];
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * @param array<int, array{path: string, relative: string, relative_dir: string, basename: string}> $inventory
+     * @return array<int, string>
+     */
+    protected function matchWildcardEntries(string $pattern, array $inventory): array
+    {
+        $pattern = trim($pattern);
+        if ($pattern === '') {
+            return [];
+        }
+
+        $normalised = str_replace('\\', '/', $pattern);
+        $escaped = preg_quote($normalised, '#');
+        $regex = '#^'.str_replace('\*', '.*', $escaped).'$#i';
+
+        $matches = [];
+
+        foreach ($inventory as $entry) {
+            if (preg_match($regex, $entry['relative'])) {
+                $matches[] = $entry['relative'];
+            }
+        }
+
+        return $matches;
     }
 
     protected function log(?callable $logger, string $message): void

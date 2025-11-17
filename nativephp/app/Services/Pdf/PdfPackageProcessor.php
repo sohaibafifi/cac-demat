@@ -16,6 +16,7 @@ class PdfPackageProcessor
     /**
      * @param array<int, array{name: string, files: array<int, string>}> $packages
      * @param array<int, array{path: string, relative: string, relative_dir: string, basename: string}>|null $inventory
+     * @return array{requested_recipients: int, processed_recipients: int, processed_files: int, missing_files: array<int, string>}
      */
     public function prepare(
         array $packages,
@@ -26,7 +27,7 @@ class PdfPackageProcessor
         ?callable $logger = null,
         ?array $inventory = null,
         ?callable $afterFileProcessed = null
-    ): void {
+    ): array {
         $inventory = $inventory ?? $this->collectPdfFiles($resolvedSourceDir);
         $lookup = [];
         foreach ($inventory as $entry) {
@@ -38,6 +39,14 @@ class PdfPackageProcessor
         if ($collectionName !== '') {
             $collectionFolder = NameSanitizer::sanitize($collectionName, 'collection');
         }
+
+        $stats = [
+            'requested_recipients' => count($packages),
+            'processed_recipients' => 0,
+            'processed_files' => 0,
+            'missing_files' => [],
+        ];
+        $missing = [];
 
         foreach ($packages as $package) {
             $name = trim((string) ($package['name'] ?? ''));
@@ -64,10 +73,13 @@ class PdfPackageProcessor
 
             $useDefaultLogging = $afterFileProcessed === null;
 
+            $processedForRecipient = 0;
+
             foreach ($files as $relative) {
                 $key = strtolower($relative);
                 if (! isset($lookup[$key])) {
                     $this->log($logger, sprintf('Warning: Source file %s not found. Skipping for %s.', $relative, $name));
+                    $missing[] = $relative;
                     continue;
                 }
 
@@ -85,6 +97,8 @@ class PdfPackageProcessor
                 );
 
                 $result = $this->pipeline->process($context, $logger);
+                $processedForRecipient++;
+                $stats['processed_files']++;
 
                 if ($afterFileProcessed) {
                     $afterFileProcessed($file, $name, true, $result->password);
@@ -97,7 +111,17 @@ class PdfPackageProcessor
                     ));
                 }
             }
+
+            if ($processedForRecipient > 0) {
+                $stats['processed_recipients']++;
+            }
         }
+
+        $missing = array_values(array_unique(array_map(static fn ($value) => trim((string) $value), $missing)));
+        sort($missing);
+        $stats['missing_files'] = $missing;
+
+        return $stats;
     }
 
     /**

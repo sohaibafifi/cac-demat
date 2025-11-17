@@ -73,6 +73,14 @@
                                             <span>🚀 Traitement...</span>
                                         </span>
                                     </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline"
+                                        wire:click="openLastReviewerOutput"
+                                        @disabled(! $lastReviewerOutputDir)
+                                    >
+                                        📂 Ouvrir le dossier
+                                    </button>
                                     <button type="button" class="list-toggle btn btn-outline" wire:click="toggleReviewerList" aria-expanded="{{ $reviewerListOpen ? 'true' : 'false' }}">
                                         {{ $reviewerListOpen ? 'Masquer la liste' : 'Afficher la liste' }}
                                     </button>
@@ -131,7 +139,17 @@
                                 <p class="text-muted">Ajoutez un membre manuellement.</p>
                                 <div class="input-row">
                                     <input type="text" placeholder="Nom du membre" wire:model.defer="manualMemberName">
+                                    <input
+                                        type="text"
+                                        placeholder="Fichiers ou dossiers (séparés par des virgules, optionnel)"
+                                        wire:model.defer="manualMemberFiles"
+                                        list="available-files"
+                                    >
                                 </div>
+                                <p class="text-muted helper">
+                                    💡 Formats acceptés : <code>document.pdf</code>, <code>dossier/fichier.pdf</code>, un dossier entier (<code>sample_1/</code>),
+                                    la racine uniquement (<code>.</code>) ou un motif (<code>sample_*/*.pdf</code>). Laissez vide pour attribuer tous les fichiers.
+                                </p>
                                 <button type="button" class="btn btn-outline" wire:click="addManualMember" @disabled($running)>➕ Ajouter</button>
                             </div>
                         </article>
@@ -152,6 +170,14 @@
                                         <span class="btn-progress" wire:loading wire:target="runMembers">
                                             <span>Traitement...</span>
                                         </span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline"
+                                        wire:click="openLastMemberOutput"
+                                        @disabled(! $lastMemberOutputDir)
+                                    >
+                                        📂 Ouvrir le dossier
                                     </button>
                                     <button type="button" class="list-toggle btn btn-outline" wire:click="toggleMemberList" aria-expanded="{{ $memberListOpen ? 'true' : 'false' }}">
                                         {{ $memberListOpen ? 'Masquer la liste' : 'Afficher la liste' }}
@@ -238,6 +264,23 @@
                 {{ $activityCollapsed ? 'Afficher les détails' : 'Masquer les détails' }}
             </button>
         </header>
+        @if ($lastRunStats)
+            @php
+                $modeLabel = $lastRunStats['mode'] === 'reviewers' ? 'Rapporteurs' : 'Membres';
+            @endphp
+            <div class="activity-summary">
+                <div class="summary-row">
+                    <strong>Dernière exécution&nbsp;:</strong>
+                    <span>{{ $modeLabel }}</span>
+                </div>
+                <div class="summary-metrics">
+                    <span><strong>{{ $lastRunStats['recipients'] }}</strong> / {{ $lastRunStats['requested'] }} destinataire{{ $lastRunStats['requested'] > 1 ? 's' : '' }}</span>
+                    <span><strong>{{ $lastRunStats['files'] }}</strong> fichier{{ $lastRunStats['files'] > 1 ? 's' : '' }}</span>
+                    <span><strong>{{ $lastRunStats['missing'] }}</strong> manquant{{ $lastRunStats['missing'] > 1 ? 's' : '' }}</span>
+                </div>
+                <p class="text-muted summary-path">Dossier&nbsp;: {{ $lastRunStats['output_dir'] }}</p>
+            </div>
+        @endif
         <div class="collapsible-body" id="activity-panels">
             <nav class="activity-tabs" role="tablist">
                 <button type="button" class="activity-tab {{ $activityTab === 'log' ? 'active' : '' }}" wire:click="setActivityTab('log')" role="tab" aria-selected="{{ $activityTab === 'log' ? 'true' : 'false' }}">Journal</button>
