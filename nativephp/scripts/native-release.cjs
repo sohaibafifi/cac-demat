@@ -141,6 +141,7 @@ function main() {
 
   const args = process.argv.slice(2);
   const buildOnly = args.includes(BUILD_ONLY_FLAG) || process.env.NATIVE_BUILD_ONLY === '1';
+  const skipGitTag = args.includes('--skip-tag') || process.env.SKIP_GIT_TAG === '1';
 
   const targets = resolveTargets(args);
   if (targets.length === 0) {
@@ -171,13 +172,15 @@ function main() {
     execRepo(`git commit -m "chore: release native version ${version}"`);
   }
 
-  if (!buildOnly) {
+  if (!buildOnly && !skipGitTag) {
     console.log('\n🏷️  Création du tag');
     try {
       execRepo(`git tag -a v${version} -m "Native release ${version}"`);
     } catch (error) {
       console.warn('⚠️  Impossible de créer le tag (existe déjà ?). Suite du processus.');
     }
+  } else if (skipGitTag && !buildOnly) {
+    console.log('\n🏷️  Création du tag ignorée (flag --skip-tag actif).');
   }
 
   console.log('\n✅ Processus terminé !');

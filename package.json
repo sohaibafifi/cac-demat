@@ -10,7 +10,7 @@
     "build": "npm run build:node && npm run build:native",
     "build:node": "npm --prefix nodejs run electron:package",
     "build:native": "node nativephp/scripts/native-release.cjs --build-only",
-    "release": "npm run release:node && npm run release:native",
+    "release": "npm run release:node && npm --prefix nativephp run release -- --skip-tag",
     "release:node": "npm --prefix nodejs run release",
     "release:native": "npm --prefix nativephp run release",
     "release:patch": "npm run version:patch",

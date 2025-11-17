@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
+const args = process.argv.slice(2);
+const skipGitTag = args.includes('--skip-tag') || process.env.SKIP_GIT_TAG === '1';
 
 function exec(command, options = {}) {
   try {
@@ -72,12 +74,15 @@ function main() {
     exec(`git commit -m "chore: release version ${version}"`);
   }
 
-  // Create git tag
-  console.log(`\n🏷️  Creating git tag v${version}...\n`);
-  try {
-    exec(`git tag -a v${version} -m "Release version ${version}"`);
-  } catch (error) {
-    console.log('⚠️  Tag might already exist, continuing...');
+  if (skipGitTag) {
+    console.log('\n🏷️  Skipping git tag creation (flag detected).\n');
+  } else {
+    console.log(`\n🏷️  Creating git tag v${version}...\n`);
+    try {
+      exec(`git tag -a v${version} -m "Release version ${version}"`);
+    } catch (error) {
+      console.log('⚠️  Tag might already exist, continuing...');
+    }
   }
 
   // Package the application
