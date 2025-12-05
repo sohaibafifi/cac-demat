@@ -7,6 +7,7 @@ import { createCoordinator } from '../app/coordinatorFactory.js';
 import { DashboardCoordinator } from '../app/dashboardCoordinator.js';
 import { IpcHandlerRegistry } from './ipcHandlers.js';
 import { ApplicationMenuBuilder } from './applicationMenu.js';
+import { AutoUpdateManager } from './autoUpdateManager.js';
 
 type ElectronModule = typeof import('electron');
 
@@ -16,6 +17,13 @@ export default async function start(electron: ElectronModule): Promise<void> {
   let mainWindow: ElectronBrowserWindow | null = null;
   let coordinator: DashboardCoordinator | null = null;
   let advancedMode = false;
+
+  const autoUpdateManager = new AutoUpdateManager(
+    app,
+    dialog,
+    BrowserWindow,
+    () => mainWindow,
+  );
 
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +41,14 @@ export default async function start(electron: ElectronModule): Promise<void> {
   }
 
   function setupApplicationMenu(): void {
-    const menuBuilder = new ApplicationMenuBuilder(Menu, app.name, process.platform === 'darwin');
+    const menuBuilder = new ApplicationMenuBuilder(
+      Menu,
+      app.name,
+      process.platform === 'darwin',
+      {
+        onCheckForUpdates: () => autoUpdateManager.manualCheck(),
+      },
+    );
 
     const handleAdvancedModeToggle = (checked: boolean) => {
       advancedMode = checked;
@@ -92,6 +107,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
     registerIpcHandlers();
     setupApplicationMenu();
     await createWindow();
+    autoUpdateManager.init();
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {

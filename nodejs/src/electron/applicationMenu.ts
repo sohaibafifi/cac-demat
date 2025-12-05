@@ -1,10 +1,15 @@
 import type { Menu as ElectronMenu, MenuItemConstructorOptions, MenuItem } from 'electron';
 
+type ApplicationMenuOptions = {
+  onCheckForUpdates?: () => void | Promise<void>;
+};
+
 export class ApplicationMenuBuilder {
   constructor(
     private readonly Menu: typeof ElectronMenu,
     private readonly appName: string,
     private readonly isMac: boolean,
+    private readonly options: ApplicationMenuOptions = {},
   ) {}
 
   build(advancedMode: boolean, onAdvancedModeToggle: (checked: boolean) => void): ElectronMenu {
@@ -127,10 +132,21 @@ export class ApplicationMenuBuilder {
   }
 
   private buildHelpMenu(): MenuItemConstructorOptions {
+    const submenu: MenuItemConstructorOptions[] = [];
+
+    if (this.options.onCheckForUpdates) {
+      submenu.push({
+        id: 'check-for-updates',
+        label: 'Rechercher des mises a jour...',
+        click: () => {
+          void this.options.onCheckForUpdates?.();
+        },
+      });
+    }
+
     return {
       role: 'help',
-      submenu: [],
+      submenu,
     };
   }
 }
-

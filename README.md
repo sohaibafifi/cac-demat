@@ -49,6 +49,7 @@ Ces scripts se trouvent dans `package.json` à la racine et peuvent être appel�
 1. **Préparer la version**
    - Lancer `npm run release:patch|minor|major` (ou `npm run version:patch|minor|major`). Cette commande met à jour `nodejs/package.json` + `package-lock.json`, puis synchronise `nativephp/.env(.example)` et `nativephp/package.json`.
    - Vérifier les variables `GITHUB_OWNER`, `GITHUB_REPO`, paramètres updater, etc.
+   - Pour les mises à jour automatiques Electron : les releases GitHub servent de “feed” à `electron-updater`. Si le dépôt reste privé, les machines qui exécutent l’application doivent définir `GH_TOKEN` (ou `GITHUB_TOKEN`) avec un PAT disposant du droit `repo:read` afin que l’auto-update puisse télécharger les artefacts. Injectez le token via le service/la session qui lance l’app (ne le stockez pas dans le binaire).
    - Pour la notarisation macOS, renseigner dans `nativephp/.env` :  
      `NATIVEPHP_APPLE_ID` (identifiant Apple Developer),  
      `NATIVEPHP_APPLE_ID_PASS` (mot de passe d'application),  

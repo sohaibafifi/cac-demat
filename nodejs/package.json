@@ -95,7 +95,7 @@
             "x64"
           ]
         }
-      ], 
+      ],
       "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
     },
     "nsis": {
@@ -115,6 +115,18 @@
       ],
       "maintainer": "Université d'Artois"
     },
-    "afterPack": "./scripts/after-pack.cjs"
+    "afterPack": "./scripts/after-pack.cjs",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sohaibafifi",
+        "repo": "cac-demat",
+        "releaseType": "draft",
+        "vPrefixedTagName": true
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   }
 }
