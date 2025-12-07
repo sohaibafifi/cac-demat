@@ -50,6 +50,7 @@
     "typescript": "^5.9.3"
   },
   "build": {
+    "buildBlockmap": false,
     "appId": "fr.univ-artois.cac-demat",
     "productName": "cac-demat-node",
     "copyright": "Copyright © 2025 Université d'Artois",
