@@ -1,6 +1,6 @@
 {
   "name": "cac-demat-node",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "private": true,
   "type": "module",
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
@@ -101,6 +101,7 @@
       "uninstallDisplayName": "Uninstall ${productName}",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "differentialPackage": true,
       "runAfterFinish": true
     },
     "linux": {
@@ -110,6 +111,9 @@
         "deb"
       ],
       "maintainer": "Université d'Artois"
+    },
+    "dmg": {
+      "writeUpdateInfo": true
     },
     "afterPack": "./scripts/after-pack.cjs",
     "publish": [
