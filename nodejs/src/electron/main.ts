@@ -18,12 +18,15 @@ export default async function start(electron: ElectronModule): Promise<void> {
   let coordinator: DashboardCoordinator | null = null;
   let advancedMode = false;
 
-  const autoUpdateManager = new AutoUpdateManager(
-    app,
-    dialog,
-    BrowserWindow,
-    () => mainWindow,
-  );
+  const isAutoUpdateEnabled = false;
+  const autoUpdateManager = isAutoUpdateEnabled
+    ? new AutoUpdateManager(
+        app,
+        dialog,
+        BrowserWindow,
+        () => mainWindow,
+      )
+    : null;
 
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,9 +48,11 @@ export default async function start(electron: ElectronModule): Promise<void> {
       Menu,
       app.name,
       process.platform === 'darwin',
-      {
-        onCheckForUpdates: () => autoUpdateManager.manualCheck(),
-      },
+      autoUpdateManager
+        ? {
+            onCheckForUpdates: () => autoUpdateManager.manualCheck(),
+          }
+        : {},
     );
 
     const handleAdvancedModeToggle = (checked: boolean) => {
@@ -108,7 +113,9 @@ export default async function start(electron: ElectronModule): Promise<void> {
     registerIpcHandlers();
     setupApplicationMenu();
     await createWindow();
-    autoUpdateManager.init();
+    if (autoUpdateManager) {
+      autoUpdateManager.init();
+    }
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {

@@ -18,6 +18,8 @@ const api = {
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),
+  getAppVersion: () => ipcRenderer.invoke('system:get-version'),
+  showMessageBox: (options) => ipcRenderer.invoke('dialog:show-message', options),
   onAdvancedModeChange: (callback) => {
     const handler = (_event, enabled) => callback(Boolean(enabled));
     ipcRenderer.on('view:advanced-mode', handler);
