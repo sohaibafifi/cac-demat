@@ -32,6 +32,9 @@ const packagerConfig = {
 
     // Ignore all node_modules (no dependencies needed at runtime)
     if (normalized.includes('node_modules')) {
+      if (normalized.includes('dist/node_modules')) {
+        return false;
+      }
       return true;
     }
 

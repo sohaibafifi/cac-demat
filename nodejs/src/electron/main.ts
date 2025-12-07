@@ -1,7 +1,6 @@
-import type {
-  BrowserWindow as ElectronBrowserWindow,
-} from 'electron';
+import type { BrowserWindow as ElectronBrowserWindow } from 'electron';
 import path from 'path';
+import Module from 'module';
 import { fileURLToPath } from 'url';
 import { createCoordinator } from '../app/coordinatorFactory.js';
 import { DashboardCoordinator } from '../app/dashboardCoordinator.js';
@@ -29,6 +28,30 @@ export default async function start(electron: ElectronModule): Promise<void> {
     : null;
 
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
+  function extendNodePath(): void {
+    try {
+      const appPath = app.getAppPath();
+      const rootNodeModules = path.join(appPath, 'node_modules');
+      const distNodeModules = path.join(appPath, 'dist', 'node_modules');
+
+      const existing = process.env.NODE_PATH ?? '';
+      const paths = existing.split(path.delimiter).filter((entry) => entry);
+      
+      // Add both root and dist node_modules
+      [rootNodeModules, distNodeModules].forEach((modulePath) => {
+        if (modulePath && !paths.includes(modulePath)) {
+          paths.unshift(modulePath);
+        }
+      });
+
+      process.env.NODE_PATH = paths.join(path.delimiter);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (Module as any)._initPaths?.();
+    } catch (error) {
+      console.warn('[bootstrap] Unable to extend NODE_PATH', error);
+    }
+  }
 
   function getCoordinator(): DashboardCoordinator {
     if (!coordinator) {
@@ -110,6 +133,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
   }
 
   app.whenReady().then(async () => {
+    extendNodePath();
     registerIpcHandlers();
     setupApplicationMenu();
     await createWindow();

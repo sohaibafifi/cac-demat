@@ -15,6 +15,32 @@ const commandSourceCandidates = [
 ];
 
 const platform = process.platform; // 'darwin', 'win32', 'linux'
+const bundledNodeModules = ['xlsx'];
+
+// Helper to collect all dependencies recursively
+const collectDependencies = (moduleName, visited = new Set()) => {
+  if (visited.has(moduleName)) return [];
+  visited.add(moduleName);
+  
+  const modulePath = path.join(projectRoot, 'node_modules', moduleName);
+  const packageJsonPath = path.join(modulePath, 'package.json');
+  
+  if (!fs.existsSync(packageJsonPath)) return [moduleName];
+  
+  const deps = [moduleName];
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const dependencies = packageJson.dependencies || {};
+    
+    for (const dep of Object.keys(dependencies)) {
+      deps.push(...collectDependencies(dep, visited));
+    }
+  } catch (err) {
+    console.error(`Failed to read dependencies for ${moduleName}:`, err.message);
+  }
+  
+  return deps;
+};
 
 const copyDirectory = (source, destination, filterFn = null) => {
   if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
@@ -51,6 +77,32 @@ if (!fs.existsSync(sourceHtml)) {
 
 fs.mkdirSync(targetDir, { recursive: true });
 fs.copyFileSync(sourceHtml, path.join(targetDir, 'index.html'));
+
+const copyNodeModule = (moduleName) => {
+  const source = path.join(projectRoot, 'node_modules', moduleName);
+  const destination = path.join(projectRoot, 'dist', 'node_modules', moduleName);
+  if (!fs.existsSync(source)) {
+    return;
+  }
+
+  fs.rmSync(destination, { recursive: true, force: true });
+  copyDirectory(source, destination);
+};
+
+fs.mkdirSync(path.join(projectRoot, 'dist', 'node_modules'), { recursive: true });
+
+// Collect all dependencies recursively
+const allModules = new Set();
+for (const moduleName of bundledNodeModules) {
+  const deps = collectDependencies(moduleName);
+  deps.forEach(dep => allModules.add(dep));
+}
+
+console.log(`Copying ${allModules.size} modules (including dependencies):`, Array.from(allModules).join(', '));
+
+for (const moduleName of allModules) {
+  copyNodeModule(moduleName);
+}
 
 // Ensure CJS preload is available for Electron's require() loader
 try {
