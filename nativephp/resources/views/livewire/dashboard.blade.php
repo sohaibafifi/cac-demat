@@ -306,6 +306,10 @@
         </div>
     </section>
 
+    <footer class="app-footer">
+        <span class="text-muted">CAC Demat &middot; v{{ config('nativephp.version') }}</span>
+    </footer>
+
     <datalist id="available-files">
         @foreach ($availableFiles as $file)
             <option value="{{ $file }}">{{ basename($file) }}</option>

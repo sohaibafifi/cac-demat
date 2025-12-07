@@ -28,6 +28,7 @@ const api = {
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
   openPath: (filePath: string) => ipcRenderer.invoke('coordinator:open-path', filePath) as Promise<boolean>,
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode') as Promise<boolean>,
+  getAppVersion: () => ipcRenderer.invoke('system:get-version') as Promise<string>,
   showMessageBox: (options: MessageBoxOptions) =>
     ipcRenderer.invoke('dialog:show-message', options) as Promise<MessageBoxReturnValue>,
   onAdvancedModeChange: (callback: (enabled: boolean) => void) => {

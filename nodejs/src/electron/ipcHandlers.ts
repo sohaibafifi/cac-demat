@@ -8,8 +8,9 @@ export class IpcHandlerRegistry {
     private readonly ipcMain: IpcMain,
     private readonly dialog: Dialog,
     private readonly shell: Shell,
-    private getCoordinator: () => DashboardCoordinator,
-    private getMainWindow: () => BrowserWindow | null,
+    private readonly getCoordinator: () => DashboardCoordinator,
+    private readonly getMainWindow: () => BrowserWindow | null,
+    private readonly getAppVersion: () => string,
   ) {}
 
   registerAll(): void {
@@ -122,6 +123,10 @@ export class IpcHandlerRegistry {
         throw new Error(error);
       }
       return true;
+    });
+
+    this.ipcMain.handle('system:get-version', async () => {
+      return this.getAppVersion();
     });
   }
 

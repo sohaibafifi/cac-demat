@@ -137,6 +137,7 @@ const elements = {
   tabMembers: document.getElementById('tab-members') as HTMLButtonElement,
   sectionReviewers: document.getElementById('section-reviewers') as HTMLElement,
   sectionMembers: document.getElementById('section-members') as HTMLElement,
+  appVersion: document.getElementById('app-version') as HTMLElement | null,
 };
 
 function setBusy(value: boolean): void {
@@ -154,6 +155,28 @@ function setState(state: CoordinatorState): void {
 function setAdvancedMode(enabled: boolean): void {
   advancedMode = enabled;
   document.body.dataset.advanced = enabled ? 'true' : 'false';
+}
+
+async function refreshFooterVersion(): Promise<void> {
+  const target = elements.appVersion;
+  if (!target) {
+    return;
+  }
+
+  const fallbackLabel = 'Version inconnue';
+  try {
+    const api = await resolveElectronApi();
+    if (!api?.getAppVersion) {
+      target.textContent = fallbackLabel;
+      return;
+    }
+
+    const version = await api.getAppVersion();
+    target.textContent = version ? `v${version}` : fallbackLabel;
+  } catch (error) {
+    console.warn('[renderer] Unable to retrieve app version', error);
+    target.textContent = fallbackLabel;
+  }
 }
 
 function buildCompletionMessage(stats: NonNullable<CoordinatorState['lastRunStats']>): string {
@@ -794,6 +817,8 @@ document.addEventListener('DOMContentLoaded', () => {
   bootstrap().catch((error) => {
     console.error(error);
   });
+
+  void refreshFooterVersion();
 
   void (async () => {
     const api = await resolveElectronApi();

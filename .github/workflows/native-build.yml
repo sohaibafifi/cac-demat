@@ -36,7 +36,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, intl, fileinfo, zip, iconv
+          extensions: mbstring, intl, fileinfo, zip, iconv, gd
           coverage: none
 
       - name: Cache Composer dependencies

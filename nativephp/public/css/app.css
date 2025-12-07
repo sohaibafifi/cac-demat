@@ -46,6 +46,15 @@ body {
     gap: 1.25rem;
 }
 
+.app-footer {
+    text-align: center;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
 .app-header h1 {
     margin: 0 0 0.5rem 0;
     font-size: clamp(1.75rem, 2.15vw, 2.2rem);

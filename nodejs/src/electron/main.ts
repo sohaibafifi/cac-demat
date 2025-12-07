@@ -66,6 +66,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
       shell,
       getCoordinator,
       () => mainWindow,
+      () => app.getVersion(),
     );
     registry.registerAll();
 
