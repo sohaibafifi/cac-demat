@@ -15,7 +15,7 @@ const commandSourceCandidates = [
 ];
 
 const platform = process.platform; // 'darwin', 'win32', 'linux'
-const bundledNodeModules = ['xlsx'];
+const bundledNodeModules = ['xlsx', 'electron-updater'];
 
 // Helper to collect all dependencies recursively
 const collectDependencies = (moduleName, visited = new Set()) => {

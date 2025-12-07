@@ -17,7 +17,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
   let coordinator: DashboardCoordinator | null = null;
   let advancedMode = false;
 
-  const isAutoUpdateEnabled = false;
+  const isAutoUpdateEnabled = true;
   const autoUpdateManager = isAutoUpdateEnabled
     ? new AutoUpdateManager(
         app,
