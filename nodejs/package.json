@@ -1,6 +1,6 @@
 {
   "name": "cac-demat-node",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "private": true,
   "type": "module",
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
@@ -72,6 +72,10 @@
       {
         "from": "dist/resources/commands",
         "to": "resources/commands"
+      },
+      {
+        "from": "../docs",
+        "to": "docs"
       }
     ],
     "directories": {

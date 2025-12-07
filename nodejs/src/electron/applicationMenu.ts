@@ -2,6 +2,7 @@ import type { Menu as ElectronMenu, MenuItemConstructorOptions, MenuItem } from 
 
 type ApplicationMenuOptions = {
   onCheckForUpdates?: () => void | Promise<void>;
+  onShowImportHelp?: () => void | Promise<void>;
 };
 
 export class ApplicationMenuBuilder {
@@ -134,7 +135,20 @@ export class ApplicationMenuBuilder {
   private buildHelpMenu(): MenuItemConstructorOptions {
     const submenu: MenuItemConstructorOptions[] = [];
 
+    if (this.options.onShowImportHelp) {
+      submenu.push({
+        id: 'show-import-help',
+        label: 'Guide d\'import des fichiers',
+        click: () => {
+          void this.options.onShowImportHelp?.();
+        },
+      });
+    }
+
     if (this.options.onCheckForUpdates) {
+      if (submenu.length > 0) {
+        submenu.push({ type: 'separator' });
+      }
       submenu.push({
         id: 'check-for-updates',
         label: 'Rechercher des mises a jour...',

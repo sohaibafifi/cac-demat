@@ -411,6 +411,52 @@
           <div class="card-group">
             <strong>Import tableur</strong>
             <p class="text-muted">Chargez un fichier Excel (.xls/.xlsx/.csv) structuré en colonnes Nom (ou Nom d'usage), Prénom, Rapporteur 1, Rapporteur 2.</p>
+            <details class="format-help" style="margin: 0.75rem 0; padding: 0.75rem; background: rgba(37,99,235,0.05); border-radius: 8px; border-left: 3px solid #2563eb;">
+              <summary style="cursor: pointer; font-weight: 600; color: #2563eb; user-select: none;">
+                ℹ️ Format du fichier d'import
+              </summary>
+              <div style="margin-top: 0.75rem; font-size: 0.85rem; line-height: 1.6;">
+                <p><strong>Format CSV :</strong></p>
+                <pre style="background: rgba(0,0,0,0.03); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem;">Nom,Prénom,Rapporteur 1,Rapporteur 2
+Dupont,Jean,Prenom1 Nom1,Prenom2 Nom2
+Martin,Marie,Prenom3 Nom3,Prenom4 Nom4</pre>
+                
+                <p style="margin-top: 0.75rem;"><strong>Format Excel :</strong></p>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem;">
+                  <thead>
+                    <tr style="background: rgba(0,0,0,0.05);">
+                      <th style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Nom</th>
+                      <th style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Prénom</th>
+                      <th style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Rapporteur 1</th>
+                      <th style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Rapporteur 2</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Dupont</td>
+                      <td style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Jean</td>
+                      <td style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Prenom1 Nom1</td>
+                      <td style="padding: 0.4rem; border: 1px solid rgba(0,0,0,0.1);">Prenom2 Nom2</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <p style="margin-top: 0.75rem;"><strong>📋 Colonnes reconnues :</strong></p>
+                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                  <li><code style="background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 3px;">Nom</code> ou <code style="background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 3px;">Nom d'usage</code> : nom du candidat</li>
+                  <li><code style="background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 3px;">Prénom</code> : prénom du candidat</li>
+                  <li><code style="background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 3px;">Rapporteur 1</code>, <code style="background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 3px;">Rapporteur 2</code>, etc. : noms des rapporteurs</li>
+                </ul>
+
+                <p style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(16,185,129,0.1); border-radius: 4px; border-left: 3px solid #10b981;">
+                  💡 <strong>Correspondance automatique :</strong> L'application associe automatiquement chaque candidat à son fichier PDF en normalisant les noms (accents, casse, espaces).
+                </p>
+
+                <p style="margin-top: 0.5rem; color: #666; font-size: 0.8rem;">
+                  💡 Les lignes masquées dans Excel sont automatiquement ignorées
+                </p>
+              </div>
+            </details>
             <div class="csv-row">
               <button id="load-reviewers-csv" class="secondary csv-btn">📄 Charger le fichier</button>
               <button id="open-reviewers-csv" class="secondary csv-btn">Ouvrir</button>
@@ -472,6 +518,22 @@
           <div class="card-group">
             <strong>Import tableur</strong>
             <p class="text-muted">Chargez un fichier CSV ou Excel (.xls/.xlsx) pour attribuer les membres automatiquement.</p>
+            <details class="format-help" style="margin: 0.75rem 0; padding: 0.75rem; background: rgba(37,99,235,0.05); border-radius: 8px; border-left: 3px solid #2563eb;">
+              <summary style="cursor: pointer; font-weight: 600; color: #2563eb; user-select: none;">
+                ℹ️ Format du fichier d'import
+              </summary>
+              <div style="margin-top: 0.75rem; font-size: 0.85rem; line-height: 1.6;">
+                <pre style="background: rgba(0,0,0,0.03); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem;">Membre;Fichier 1;Fichier 2
+Dupont Jean;dossiers/dupont_jean.pdf;sample_1/
+Marie Martin;.;*.pdf</pre>
+                <p style="margin: 0.5rem 0 0;">Colonnes <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Membre</code>/<code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Member</code> (ou <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Nom</code>/<code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Name</code> en Excel) puis autant de colonnes de fichiers que nécessaire.</p>
+                <p style="margin: 0.5rem 0 0;">Séparez plusieurs fichiers dans une même cellule avec <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">;</code> ou un retour à la ligne. Laisser vide attribue tous les PDF au membre.</p>
+                <p style="margin: 0.5rem 0 0;">Références acceptées : <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">document.pdf</code>, <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">dossier/</code>, <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">.</code>, motifs <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">*.pdf</code> ou un nom complet <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Prénom Nom</code> (correspondance automatique sur les PDF).</p>
+                <p style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(16,185,129,0.1); border-radius: 4px; border-left: 3px solid #10b981;">
+                  💡 <strong>Correspondance automatique :</strong> les noms et chemins sont normalisés (accents, casse, espaces) et dédupliqués. Les références non trouvées sont consignées dans le journal.
+                </p>
+              </div>
+            </details>
             <div class="csv-row">
               <button id="load-members-csv" class="secondary csv-btn">📄 Charger le fichier</button>
               <button id="open-members-csv" class="secondary csv-btn">Ouvrir</button>
