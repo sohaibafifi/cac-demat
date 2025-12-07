@@ -1,5 +1,6 @@
 import type { ReviewerAssignment } from '../services/assignments/csvAssignmentLoader.js';
 import type { ManualReviewerAssignment, ReviewerSummary } from './dashboardCoordinator.js';
+import type { ReviewerSummaryFile } from './dashboardCoordinator.js';
 
 export class ReviewerSummaryBuilder {
   build(
@@ -32,13 +33,15 @@ export class ReviewerSummaryBuilder {
         const summary = grouped.get(name.toLowerCase())!;
         const isMissing = missingSet.has(file.toLowerCase());
 
-        summary.files.push({
+        const entry: ReviewerSummaryFile = {
           name: file,
           missing: isMissing,
           manual: false,
           manualIndex: null,
           source: 'csv',
-        });
+          label: assignment.label ?? file,
+        };
+        summary.files.push(entry);
         summary.hasCsv = true;
         if (isMissing) summary.hasMissing = true;
       }
@@ -67,13 +70,15 @@ export class ReviewerSummaryBuilder {
         const summary = grouped.get(name.toLowerCase())!;
         const isMissing = missingSet.has(file.toLowerCase());
 
-        summary.files.push({
+        const entry: ReviewerSummaryFile = {
           name: file,
           missing: isMissing,
           manual: true,
           manualIndex: index,
           source: 'manual',
-        });
+          label: assignment.file,
+        };
+        summary.files.push(entry);
         summary.hasManual = true;
         if (isMissing) summary.hasMissing = true;
       }

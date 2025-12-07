@@ -43,7 +43,7 @@
                     <div class="tab-content">
                         <article class="control-card">
                             <strong>Attribution des rapporteurs</strong>
-                            <p class="text-muted">Fichier CSV associant les rapporteurs aux PDFs sources.</p>
+                            <p class="text-muted">Fichier CSV ou Excel (XLS/XLSX) listant les colonnes <code>Nom</code>/<code>Nom d'usage</code>, <code>Prénom</code> et les rapporteurs. Les noms sont utilisés pour retrouver automatiquement les PDFs.</p>
                             <button type="button" class="btn" wire:click="pickReviewersCsv" @disabled($running)>👥 Charger le CSV des rapporteurs</button>
                             <span class="path-chip">{{ $csvReviewers ?? 'Aucun fichier sélectionné' }}</span>
                             <div class="manual-input">
@@ -108,7 +108,7 @@
                                                 @foreach ($reviewer['files'] as $file)
                                                     <div class="item-file {{ $file['missing'] ? 'is-missing' : '' }}">
                                                         <div class="item-file-header">
-                                                            <span class="item-file-name">{{ $file['name'] }}</span>
+                                                            <span class="item-file-name">{{ $file['display_label'] ?? $file['label'] ?? $file['name'] }}</span>
                                                             @if ($file['manual'] && $file['manual_index'] !== null)
                                                                 <button type="button" class="item-remove" wire:click="removeManualReviewer({{ $file['manual_index'] }})">✖</button>
                                                             @endif
@@ -132,7 +132,7 @@
                     <div class="tab-content">
                         <article class="control-card">
                             <strong>Liste des membres</strong>
-                            <p class="text-muted">Fichier CSV avec une colonne <code>member</code> (ou <code>membre</code>) et, optionnellement, les chemins des fichiers ou dossiers attribués.</p>
+                            <p class="text-muted">Fichier CSV ou Excel (XLS/XLSX) avec une colonne <code>member</code> (ou <code>membre</code>) et, optionnellement, les chemins des fichiers ou dossiers attribués.</p>
                             <button type="button" class="btn" wire:click="pickMembersCsv" @disabled($running)>🧾 Charger le fichier des membres</button>
                             <span class="path-chip">{{ $csvMembers ?? 'Aucun fichier sélectionné' }}</span>
                             <div class="manual-input">
@@ -148,7 +148,8 @@
                                 </div>
                                 <p class="text-muted helper">
                                     💡 Formats acceptés : <code>document.pdf</code>, <code>dossier/fichier.pdf</code>, un dossier entier (<code>sample_1/</code>),
-                                    la racine uniquement (<code>.</code>) ou un motif (<code>sample_*/*.pdf</code>). Laissez vide pour attribuer tous les fichiers.
+                                    la racine uniquement (<code>.</code>) ou un motif (<code>sample_*/*.pdf</code>). Vous pouvez aussi saisir un nom complet (<code>Prénom Nom</code> ou <code>Nom Prénom</code>) pour laisser l'app deviner le PDF correspondant.
+                                    Laissez vide pour attribuer tous les fichiers.
                                 </p>
                                 <button type="button" class="btn btn-outline" wire:click="addManualMember" @disabled($running)>➕ Ajouter</button>
                             </div>

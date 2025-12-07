@@ -6,6 +6,7 @@ type ReviewerSummaryFile = {
   manual: boolean;
   manualIndex: number | null;
   source: 'csv' | 'manual';
+  label?: string;
 };
 
 type ReviewerSummary = {
@@ -21,11 +22,12 @@ type CoordinatorState = {
   csvReviewers: string | null;
   csvMembers: string | null;
   availableFiles: string[];
-  reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv' }>;
+  reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv'; label?: string }>;
   reviewersManual: Array<{ file: string; reviewers: string[]; source: 'manual' }>;
   membersFromCsv: Array<{ name: string; files: string[]; source: 'csv' }>;
   membersManual: Array<{ name: string; files: string[]; source: 'manual' }>;
   missingReviewerFiles: string[];
+  missingReviewerNames: string[];
   reviewerSummaries: ReviewerSummary[];
   combinedMembers: Array<{ name: string; files: string[] }>;
   log: string;
@@ -55,6 +57,11 @@ declare global {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const trimPdfExtension = (value: string): string => {
+  const label = value.trim();
+  return label.replace(/\.pdf$/i, '').trim() || label;
+};
 
 const resolveElectronApi = async (attempts = 40, interval = 50): Promise<ElectronApi | null> => {
   if (window.electronAPI) {
@@ -399,9 +406,14 @@ function renderMissingFiles(): void {
     return;
   }
 
-  currentState.missingReviewerFiles.forEach((file) => {
+  const labels =
+    currentState.missingReviewerNames && currentState.missingReviewerNames.length === currentState.missingReviewerFiles.length
+      ? currentState.missingReviewerNames
+      : currentState.missingReviewerFiles;
+
+  labels.forEach((label) => {
     const span = document.createElement('span');
-    span.textContent = file;
+    span.textContent = trimPdfExtension(label);
     elements.missingFiles.appendChild(span);
   });
 }
@@ -440,7 +452,7 @@ function renderReviewerSummaries(): void {
     if (summary.hasCsv) {
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = 'CSV';
+      badge.textContent = 'Fichier';
       badges.appendChild(badge);
     }
 
@@ -466,7 +478,8 @@ function renderReviewerSummaries(): void {
     filesRow.className = 'summary-files';
     summary.files.forEach((file) => {
       const chip = document.createElement('span');
-      chip.textContent = file.name;
+      const baseLabel = file.label ?? file.name;
+      chip.textContent = file.missing ? trimPdfExtension(baseLabel) : baseLabel;
       chip.dataset.missing = file.missing ? 'true' : 'false';
       filesRow.appendChild(chip);
     });
@@ -679,14 +692,73 @@ function renderMembersSelected(): void {
   });
 }
 
-async function updateCoordinator(action: () => Promise<CoordinatorState>): Promise<void> {
+async function showReviewerImportSummary(state: CoordinatorState | null): Promise<void> {
+  if (!state) {
+    return;
+  }
+
+  const totalAssignments = state.reviewerSummaries.length;
+  const totalFoundFiles = state.reviewerSummaries.reduce(
+    (sum, summary) => sum + summary.files.filter((file) => !file.missing).length,
+    0,
+  );
+  const recipientsWithFiles = state.reviewerSummaries.filter((summary) =>
+    summary.files.some((file) => !file.missing),
+  ).length;
+
+  const inferredMissingNames =
+    state.missingReviewerNames && state.missingReviewerNames.length > 0
+      ? state.missingReviewerNames
+      : state.reviewerSummaries
+          .filter((summary) => summary.files.length === 0 || summary.files.every((file) => file.missing))
+          .map((summary) => summary.name)
+          .filter((name) => name.trim().length > 0);
+
+  const lines: string[] = [
+    `Attributions importées : ${totalAssignments}`,
+    `Rapporteurs avec fichier : ${recipientsWithFiles}/${totalAssignments}`,
+    `Fichiers détectés : ${totalFoundFiles}`,
+  ];
+
+  if (inferredMissingNames.length > 0) {
+    const preview = inferredMissingNames.slice(0, 8);
+    lines.push('', 'Sans fichier détecté :', preview.join(', '));
+    if (inferredMissingNames.length > preview.length) {
+      lines.push(`… +${inferredMissingNames.length - preview.length} autre(s)`);
+    }
+  } else if (totalAssignments > 0) {
+    lines.push('', 'Tous les rapporteurs disposent d’au moins un fichier.');
+  }
+
+  const api = await resolveElectronApi();
+  if (!api?.showMessageBox) {
+    return;
+  }
+
+  await api.showMessageBox({
+    type: inferredMissingNames.length > 0 ? 'warning' : 'info',
+    buttons: ['Fermer'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Import des rapporteurs',
+    message:
+      inferredMissingNames.length > 0
+        ? 'Certaines attributions n’ont pas pu être associées à un fichier.'
+        : 'Import des rapporteurs terminé.',
+    detail: lines.join('\n'),
+  });
+}
+
+async function updateCoordinator(action: () => Promise<CoordinatorState>): Promise<CoordinatorState | null> {
   try {
     setBusy(true);
     const state = await action();
     setState(state);
+    return state;
   } catch (error) {
     console.error(error);
     alert(formatError(error));
+    return null;
   } finally {
     setBusy(false);
   }
@@ -794,7 +866,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    await updateCoordinator(() => api.setReviewersCsv(selected));
+    const state = await updateCoordinator(() => api.setReviewersCsv(selected));
+    await showReviewerImportSummary(state);
   });
 
   elements.openReviewersCsv.addEventListener('click', async () => {

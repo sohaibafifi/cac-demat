@@ -17,6 +17,7 @@
         "league/csv": "^9.26",
         "livewire/livewire": "^3.6",
         "nativephp/electron": "^1.3",
+        "phpoffice/phpspreadsheet": "^2.1",
         "ext-iconv": "*"
     },
     "require-dev": {

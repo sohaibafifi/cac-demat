@@ -99,8 +99,8 @@ export class IpcHandlerRegistry {
       const options: OpenDialogOptions = {
         properties: ['openFile'],
         filters: [
-          { name: 'CSV', extensions: ['csv'] },
-          { name: 'All Files', extensions: ['*'] },
+          { name: 'Tableur (CSV / Excel)', extensions: ['csv', 'xls', 'xlsx'] },
+          { name: 'Tous les fichiers', extensions: ['*'] },
         ],
       };
       const result = await this.showDialog(options);

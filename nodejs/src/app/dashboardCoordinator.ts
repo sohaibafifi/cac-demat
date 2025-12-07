@@ -1,4 +1,4 @@
-import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment } from '../services/assignments/csvAssignmentLoader.js';
+import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment, PdfFileMatcher } from '../services/assignments/csvAssignmentLoader.js';
 import { MemberPreparationService, MemberEntry } from '../services/pipeline/memberPreparationService.js';
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
@@ -23,6 +23,7 @@ export interface ReviewerSummaryFile {
   manual: boolean;
   manualIndex: number | null;
   source: 'csv' | 'manual';
+  label?: string;
 }
 
 export interface ReviewerSummary {
@@ -56,6 +57,7 @@ export class DashboardCoordinator {
   membersManual: ManualMemberEntry[] = [];
   fileEntries: WorkspaceInventory['entries'] = [];
   missingReviewerFiles: string[] = [];
+  missingReviewerNames: string[] = [];
   logMessages: string[] = ['Prêt.'];
   log = 'Prêt.';
   status = 'En attente';
@@ -83,14 +85,14 @@ export class DashboardCoordinator {
 
   async loadReviewersCsv(path: string): Promise<void> {
     this.csvReviewers = path;
-    this.appendLog(`CSV des rapporteurs sélectionné: ${path}`);
+    this.appendLog(`Fichier des rapporteurs sélectionné: ${path}`);
 
     try {
-      this.reviewersFromCsv = await this.csvLoader.reviewers(path);
+      this.reviewersFromCsv = await this.csvLoader.reviewers(path, this.availableFiles);
       this.appendLog('Attributions de rapporteurs importées.');
       await this.checkReviewerFileWarnings();
     } catch (error) {
-      this.appendLog(`Échec de lecture du CSV des rapporteurs: ${this.getErrorMessage(error)}`);
+      this.appendLog(`Échec de lecture du fichier des rapporteurs: ${this.getErrorMessage(error)}`);
     }
   }
 
@@ -99,7 +101,7 @@ export class DashboardCoordinator {
     this.appendLog(`Fichier des membres sélectionné: ${path}`);
 
     try {
-      this.membersFromCsv = await this.csvLoader.members(path);
+      this.membersFromCsv = await this.csvLoader.members(path, this.availableFiles);
       this.appendLog('Membres importés.');
     } catch (error) {
       this.appendLog(`Échec de lecture du fichier des membres: ${this.getErrorMessage(error)}`);
@@ -142,7 +144,7 @@ export class DashboardCoordinator {
       return;
     }
 
-    const files = this.parseFileList(filesRaw);
+    const files = this.normalizeMemberFiles(this.parseFileList(filesRaw));
     this.membersManual.push({ name: trimmed, files, source: 'manual' });
     this.appendLog(`Membre manuel ajouté: ${trimmed}`);
   }
@@ -165,7 +167,7 @@ export class DashboardCoordinator {
 
   setManualMemberFiles(index: number, files: string[]): void {
     if (index >= 0 && index < this.membersManual.length) {
-      this.membersManual[index].files = files.map((f) => f.trim()).filter((f) => f);
+      this.membersManual[index].files = this.normalizeMemberFiles(files);
     }
   }
 
@@ -343,6 +345,22 @@ export class DashboardCoordinator {
       (entry) => entry.type === 'file' && entry.name.toLowerCase().endsWith('.pdf'),
     );
 
+    if (this.csvReviewers) {
+      try {
+        this.reviewersFromCsv = await this.csvLoader.reviewers(this.csvReviewers, this.availableFiles);
+      } catch (error) {
+        this.appendLog(`Échec de relecture du fichier des rapporteurs: ${this.getErrorMessage(error)}`);
+      }
+    }
+
+    if (this.csvMembers) {
+      try {
+        this.membersFromCsv = await this.csvLoader.members(this.csvMembers, this.availableFiles);
+      } catch (error) {
+        this.appendLog(`Échec de relecture du fichier des membres: ${this.getErrorMessage(error)}`);
+      }
+    }
+
     if (this.reviewersFromCsv.length > 0 || this.reviewersManual.length > 0) {
       await this.checkReviewerFileWarnings(false);
     }
@@ -351,14 +369,16 @@ export class DashboardCoordinator {
   private async checkReviewerFileWarnings(shouldLog = true): Promise<void> {
     const assignments = [...this.reviewersFromCsv, ...this.reviewersManual];
     const missing = this.workspace.findMissingFiles(assignments, this.availableFiles);
+    const missingLabels = missing.map((file) => this.getAssignmentLabel(file));
 
     if (shouldLog) {
-      for (const file of missing) {
-        this.appendLog(`⚠️ Fichier introuvable dans le dossier: ${file}`);
+      for (const label of missingLabels) {
+        this.appendLog(`⚠️ Fichier introuvable pour: ${this.formatDisplayLabel(label)}`);
       }
     }
 
     this.missingReviewerFiles = missing;
+    this.missingReviewerNames = missingLabels.map((label) => this.formatDisplayLabel(label));
   }
 
   private parseReviewerNames(reviewerNames: string | string[]): string[] {
@@ -370,6 +390,68 @@ export class DashboardCoordinator {
 
   private parseFileList(filesRaw: string): string[] {
     return filesRaw.split(/[;,\n]/).map((f) => f.trim()).filter((f) => f);
+  }
+
+  private normalizeMemberFiles(files: string[]): string[] {
+    if (!files || files.length === 0) {
+      return [];
+    }
+
+    const matcher = this.createPdfMatcher();
+    return files
+      .map((file) => this.resolveMemberReference(file, matcher))
+      .filter((file) => file.length > 0);
+  }
+
+  private resolveMemberReference(value: string, matcher: PdfFileMatcher | null): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    if (!matcher || !this.isNameReference(trimmed)) {
+      return trimmed;
+    }
+
+    return matcher.findByNameReference(trimmed) ?? this.buildFallbackFileNameFromReference(trimmed);
+  }
+
+  private buildFallbackFileNameFromReference(reference: string): string {
+    const normalized = reference.replace(/\s+/g, ' ').trim();
+    return normalized === '' ? 'document.pdf' : `${normalized}.pdf`;
+  }
+
+  private isNameReference(value: string): boolean {
+    if (!value) {
+      return false;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return false;
+    }
+
+    if (!trimmed.includes(' ')) {
+      return false;
+    }
+
+    if (/[\\/]/.test(trimmed)) {
+      return false;
+    }
+
+    if (/[*?]/.test(trimmed)) {
+      return false;
+    }
+
+    if (/\./.test(trimmed)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private createPdfMatcher(): PdfFileMatcher | null {
+    return this.availableFiles.length > 0 ? new PdfFileMatcher(this.availableFiles) : null;
   }
 
   private resetLog(): void {
@@ -384,5 +466,30 @@ export class DashboardCoordinator {
 
   private getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private getAssignmentLabel(file: string): string {
+    const normalized = file.toLowerCase();
+
+    const csvMatch = this.reviewersFromCsv.find(
+      (assignment) => assignment.file.toLowerCase() === normalized,
+    );
+    if (csvMatch) {
+      return csvMatch.label ?? csvMatch.file;
+    }
+
+    const manualMatch = this.reviewersManual.find(
+      (assignment) => assignment.file.toLowerCase() === normalized,
+    );
+    if (manualMatch) {
+      return manualMatch.file;
+    }
+
+    return file;
+  }
+
+  private formatDisplayLabel(value: string): string {
+    const trimmed = value.replace(/\.pdf$/i, '').trim();
+    return trimmed.length > 0 ? trimmed : value;
   }
 }

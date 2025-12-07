@@ -409,10 +409,10 @@
         <h2>Rapporteurs</h2>
         <div class="grid">
           <div class="card-group">
-            <strong>Import par CSV</strong>
-            <p class="text-muted">Chargez un fichier CSV pour attribuer les rapporteurs automatiquement.</p>
+            <strong>Import tableur</strong>
+            <p class="text-muted">Chargez un fichier Excel (.xls/.xlsx/.csv) structuré en colonnes Nom (ou Nom d'usage), Prénom, Rapporteur 1, Rapporteur 2.</p>
             <div class="csv-row">
-              <button id="load-reviewers-csv" class="secondary csv-btn">📄 Charger le CSV</button>
+              <button id="load-reviewers-csv" class="secondary csv-btn">📄 Charger le fichier</button>
               <button id="open-reviewers-csv" class="secondary csv-btn">Ouvrir</button>
             </div>
             <div class="path-display" id="reviewers-csv-path">Aucun fichier sélectionné</div>
@@ -470,10 +470,10 @@
         <h2>Membres</h2>
         <div class="grid">
           <div class="card-group">
-            <strong>Import par CSV</strong>
-            <p class="text-muted">Chargez un fichier CSV pour attribuer les membres automatiquement.</p>
+            <strong>Import tableur</strong>
+            <p class="text-muted">Chargez un fichier CSV ou Excel (.xls/.xlsx) pour attribuer les membres automatiquement.</p>
             <div class="csv-row">
-              <button id="load-members-csv" class="secondary csv-btn">📄 Charger le CSV</button>
+              <button id="load-members-csv" class="secondary csv-btn">📄 Charger le fichier</button>
               <button id="open-members-csv" class="secondary csv-btn">Ouvrir</button>
             </div>
             <div class="path-display" id="members-csv-path">Aucun fichier sélectionné</div>
@@ -493,6 +493,7 @@
               • Dossier entier : <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">sample_1/</code> ou <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">sample_1</code><br>
               • Fichiers racine uniquement : <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">.</code><br>
               • Motif avec joker : <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">*.pdf</code> ou <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">sample_*/*.pdf</code><br>
+              • Nom complet : <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Prénom Nom</code> ou <code style="background: rgba(37,99,235,0.1); padding: 0.1rem 0.3rem; border-radius: 4px;">Nom Prénom</code> (tentative automatique sur les PDF du dossier)<br>
               • Vide = tous les fichiers
             </p>
             <div class="action-inline">

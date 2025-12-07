@@ -2,11 +2,11 @@
 
 namespace App\Livewire;
 
-use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 use Illuminate\Support\Str;
 
 use App\Services\Assignments\CsvAssignmentLoader;
+use App\Services\Assignments\PdfFileMatcher;
 use App\Services\Pipeline\MemberPreparationService;
 use App\Services\Pipeline\ReviewerPreparationService;
 use App\Services\Workspace\WorkspaceService;
@@ -27,6 +27,7 @@ class Dashboard extends Component
     public array $membersManual = [];
     public array $fileEntries = [];
     public array $missingReviewerFiles = [];
+    public array $missingReviewerNames = [];
     public string $log = "Prêt.";
     public string $status = 'En attente';
     public bool $running = false;
@@ -90,13 +91,14 @@ class Dashboard extends Component
         $missingLookup = array_map('strtolower', $this->missingReviewerFiles);
         $grouped = [];
 
-        $appendAssignment = static function (
+        $appendAssignment = function (
             array &$group,
             string $reviewer,
             string $file,
             string $source,
             ?int $manualIndex,
-            array $missingLookup
+            array $missingLookup,
+            ?string $label = null
         ): void {
             $reviewerName = trim($reviewer);
             if ($reviewerName === '' || $file === '') {
@@ -117,8 +119,16 @@ class Dashboard extends Component
 
             $isMissing = in_array(strtolower($file), $missingLookup, true);
 
+            $resolvedLabel = $label ?? $file;
+            $displayLabel = $resolvedLabel;
+            if ($isMissing) {
+                $displayLabel = $this->formatMissingLabel($resolvedLabel);
+            }
+
             $group[$normalisedReviewer]['files'][] = [
                 'name' => $file,
+                'label' => $label ?? $file,
+                'display_label' => $displayLabel,
                 'missing' => $isMissing,
                 'manual' => $source === 'manual',
                 'manual_index' => $manualIndex,
@@ -151,7 +161,15 @@ class Dashboard extends Component
             }
 
             foreach ($reviewers as $reviewer) {
-                $appendAssignment($grouped, $reviewer, $file, 'csv', null, $missingLookup);
+                $appendAssignment(
+                    $grouped,
+                    $reviewer,
+                    $file,
+                    'csv',
+                    null,
+                    $missingLookup,
+                    $assignment['label'] ?? $file
+                );
             }
         }
 
@@ -168,7 +186,7 @@ class Dashboard extends Component
             }
 
             foreach ($reviewers as $reviewer) {
-                $appendAssignment($grouped, $reviewer, $file, 'manual', $index, $missingLookup);
+                $appendAssignment($grouped, $reviewer, $file, 'manual', $index, $missingLookup, $file);
             }
         }
 
@@ -206,7 +224,9 @@ class Dashboard extends Component
     public function pickReviewersCsv(): void
     {
         $this->appendLog('Sélection du CSV des rapporteurs...');
-        $selection = Dialog::new()->filter('CSV files',  ['csv'])->open();
+        $selection = Dialog::new()
+            ->filter('CSV/Excel', ['csv', 'xls', 'xlsx'])
+            ->open();
 
         if (! $selection) {
             $this->appendLog('Sélection du CSV des rapporteurs annulée.');
@@ -217,7 +237,7 @@ class Dashboard extends Component
         $this->appendLog("CSV des rapporteurs sélectionné: {$selection}");
 
         try {
-            $this->reviewersFromCsv = $this->csvLoader->reviewers($selection);
+            $this->reviewersFromCsv = $this->csvLoader->reviewers($selection, $this->availableFiles);
             $this->appendLog('Attributions de rapporteurs importées.');
             $this->checkReviewerFileWarnings();
         } catch (\Throwable $e) {
@@ -228,7 +248,9 @@ class Dashboard extends Component
     public function pickMembersCsv(): void
     {
         $this->appendLog('Sélection du fichier des membres...');
-        $selection = Dialog::new()->filter('CSV files',  ['csv'])->open();
+        $selection = Dialog::new()
+            ->filter('CSV/Excel', ['csv', 'xls', 'xlsx'])
+            ->open();
 
         if (! $selection) {
             $this->appendLog('Sélection du fichier des membres annulée.');
@@ -239,7 +261,7 @@ class Dashboard extends Component
         $this->appendLog("Fichier des membres sélectionné: {$selection}");
 
         try {
-            $this->membersFromCsv = $this->csvLoader->members($selection);
+            $this->membersFromCsv = $this->csvLoader->members($selection, $this->availableFiles);
             $this->appendLog('Membres importés.');
         } catch (\Throwable $e) {
             $this->appendLog('Échec de lecture du fichier des membres: '.$e->getMessage());
@@ -299,12 +321,7 @@ class Dashboard extends Component
             return;
         }
 
-        $files = collect(preg_split('/[;,\\n]/', $this->manualMemberFiles ?? ''))
-            ->map(fn ($value) => trim((string) $value))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        $files = $this->normalizeMemberFiles($this->parseFileList($this->manualMemberFiles ?? ''));
 
         $this->membersManual[] = [
             'name' => $name,
@@ -455,6 +472,22 @@ class Dashboard extends Component
             ->values()
             ->all();
 
+        if ($this->csvReviewers) {
+            try {
+                $this->reviewersFromCsv = $this->csvLoader->reviewers($this->csvReviewers, $this->availableFiles);
+            } catch (\Throwable $e) {
+                $this->appendLog('Échec de relecture du fichier des rapporteurs: '.$e->getMessage());
+            }
+        }
+
+        if ($this->csvMembers) {
+            try {
+                $this->membersFromCsv = $this->csvLoader->members($this->csvMembers, $this->availableFiles);
+            } catch (\Throwable $e) {
+                $this->appendLog('Échec de relecture du fichier des membres: '.$e->getMessage());
+            }
+        }
+
         if ($this->reviewersFromCsv !== [] || $this->reviewersManual !== []) {
             $this->checkReviewerFileWarnings(false);
         }
@@ -530,6 +563,57 @@ class Dashboard extends Component
             ->all();
     }
 
+    /**
+     * @return array<int, string>
+     */
+    protected function parseFileList(?string $value): array
+    {
+        return collect(preg_split('/[;,\n]/', (string) $value) ?: [])
+            ->map(fn ($candidate) => trim((string) $candidate))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $files
+     * @return array<int, string>
+     */
+    protected function normalizeMemberFiles(array $files): array
+    {
+        if ($files === []) {
+            return [];
+        }
+
+        $matcher = $this->availableFiles !== [] ? new PdfFileMatcher($this->availableFiles) : null;
+
+        return collect($files)
+            ->map(function ($value) use ($matcher) {
+                $trimmed = trim((string) $value);
+                if ($trimmed === '') {
+                    return null;
+                }
+
+                if ($matcher === null || ! PdfFileMatcher::looksLikeNameReference($trimmed)) {
+                    return $trimmed;
+                }
+
+                return $matcher->findByNameReference($trimmed)
+                    ?? $this->buildFallbackFileNameFromReference($trimmed);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function buildFallbackFileNameFromReference(string $reference): string
+    {
+        $normalized = trim(preg_replace('/\s+/', ' ', $reference) ?? '');
+
+        return $normalized === '' ? 'document.pdf' : $normalized.'.pdf';
+    }
+
     protected function appendLog(string $message): void
     {
         $this->log = trim($this->log."\n".$message);
@@ -539,14 +623,44 @@ class Dashboard extends Component
     {
         $assignments = array_merge($this->reviewersFromCsv, $this->reviewersManual);
         $missing = $this->workspace->findMissingFiles($assignments, $this->availableFiles);
+        $labels = array_map(fn ($file) => $this->formatMissingLabel($this->findAssignmentLabel($file)), $missing);
 
         if ($shouldLog) {
-            foreach ($missing as $file) {
-                $this->appendLog("⚠️ Fichier introuvable dans le dossier: {$file}");
+            foreach ($labels as $label) {
+                $this->appendLog("⚠️ Fichier introuvable pour: {$label}");
             }
         }
 
         $this->missingReviewerFiles = $missing;
+        $this->missingReviewerNames = $labels;
+    }
+
+    protected function findAssignmentLabel(string $file): string
+    {
+        $normalized = strtolower($file);
+
+        foreach ($this->reviewersFromCsv as $assignment) {
+            $assignmentFile = strtolower((string) ($assignment['file'] ?? ''));
+            if ($assignmentFile === $normalized) {
+                return (string) ($assignment['label'] ?? $assignment['file'] ?? $file);
+            }
+        }
+
+        foreach ($this->reviewersManual as $assignment) {
+            $assignmentFile = strtolower((string) ($assignment['file'] ?? ''));
+            if ($assignmentFile === $normalized) {
+                return (string) ($assignment['file'] ?? $file);
+            }
+        }
+
+        return $file;
+    }
+
+    protected function formatMissingLabel(string $label): string
+    {
+        $trimmed = trim(preg_replace('/\.pdf$/i', '', $label) ?? '');
+
+        return $trimmed === '' ? $label : $trimmed;
     }
 
     protected function openDirectory(?string $path, string $label): void

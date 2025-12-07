@@ -5,12 +5,13 @@ export interface SerializedCoordinatorState {
   csvReviewers: string | null;
   csvMembers: string | null;
   availableFiles: string[];
-  reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv' }>;
+  reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv'; label?: string }>;
   reviewersManual: Array<{ file: string; reviewers: string[]; source: 'manual' }>;
   membersFromCsv: Array<{ name: string; files: string[]; source: 'csv' }>;
   membersManual: Array<{ name: string; files: string[]; source: 'manual' }>;
   fileEntries: Array<any>;
   missingReviewerFiles: string[];
+  missingReviewerNames: string[];
   reviewerSummaries: Array<any>;
   combinedMembers: Array<{ name: string; files: string[] }>;
   log: string;
@@ -43,6 +44,7 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
       file: entry.file,
       reviewers: [...entry.reviewers],
       source: entry.source,
+      label: entry.label,
     })),
     reviewersManual: coordinator.reviewersManual.map((entry) => ({
       file: entry.file,
@@ -61,6 +63,7 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
     })),
     fileEntries: coordinator.fileEntries.map((entry) => ({ ...entry })),
     missingReviewerFiles: [...coordinator.missingReviewerFiles],
+    missingReviewerNames: [...coordinator.missingReviewerNames],
     reviewerSummaries: coordinator.getReviewerSummaries().map((summary) => ({
       name: summary.name,
       hasCsv: summary.hasCsv,
@@ -100,4 +103,3 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
       : null,
   };
 }
-
