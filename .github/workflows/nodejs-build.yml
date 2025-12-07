@@ -39,9 +39,22 @@ jobs:
         working-directory: nodejs
         run: npm ci
 
-      - name: Publish Electron app
+      - name: Build application
         working-directory: nodejs
-        run: npm run publish
+        run: npm run build
+
+      - name: Publish to GitHub Releases (macOS)
+        if: matrix.os == 'macos-latest'
+        working-directory: nodejs
+        run: npx electron-builder --mac --publish always
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Releases (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: nodejs
+        run: npx electron-builder --win --publish always
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

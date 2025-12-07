@@ -1,6 +1,6 @@
 {
   "name": "cac-demat-node",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
   "type": "module",
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
@@ -27,6 +27,7 @@
     "publish": "electron-forge publish",
     "prune": "npm prune --production",
     "optimize": "node scripts/optimize-size.cjs",
+    "list-assets": "node scripts/list-release-assets.cjs",
     "version:patch": "node ../scripts/bump-version.cjs patch",
     "version:minor": "node ../scripts/bump-version.cjs minor",
     "version:major": "node ../scripts/bump-version.cjs major",
