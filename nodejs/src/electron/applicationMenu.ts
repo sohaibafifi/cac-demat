@@ -54,7 +54,7 @@ export class ApplicationMenuBuilder {
 
   private buildFileMenu(): MenuItemConstructorOptions {
     return {
-      label: 'File',
+      label: 'Fichier',
       submenu: [this.isMac ? { role: 'close' } : { role: 'quit' }],
     };
   }
@@ -82,14 +82,14 @@ export class ApplicationMenuBuilder {
         ];
 
     return {
-      label: 'Edit',
+      label: 'Édition',
       submenu: [...commonItems, ...platformItems],
     };
   }
 
   private buildViewMenu(advancedMode: boolean, onAdvancedModeToggle: (checked: boolean) => void): MenuItemConstructorOptions {
     return {
-      label: 'View',
+      label: 'Affichage',
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
@@ -102,7 +102,7 @@ export class ApplicationMenuBuilder {
         { role: 'togglefullscreen' },
         { type: 'separator' },
         {
-          label: 'Advanced',
+          label: 'Mode avancé',
           id: 'advanced-view-toggle',
           type: 'checkbox',
           checked: advancedMode,
@@ -127,7 +127,7 @@ export class ApplicationMenuBuilder {
       : [{ role: 'close' }];
 
     return {
-      label: 'Window',
+      label: 'Fenêtre',
       submenu: [...baseItems, ...platformItems],
     };
   }
@@ -151,7 +151,7 @@ export class ApplicationMenuBuilder {
       }
       submenu.push({
         id: 'check-for-updates',
-        label: 'Rechercher des mises a jour...',
+        label: 'Rechercher des mises à jour...',
         click: () => {
           void this.options.onCheckForUpdates?.();
         },
@@ -159,6 +159,7 @@ export class ApplicationMenuBuilder {
     }
 
     return {
+      label: 'Aide',
       role: 'help',
       submenu,
     };

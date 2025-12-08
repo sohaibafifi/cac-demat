@@ -358,13 +358,17 @@ const normalizeNameToken = (value: string): string => {
     return '';
   }
 
-  return value
+  const collapsed = value
     .toString()
     .trim()
     .toLowerCase()
     .normalize('NFD')
+    .replace(/['’]/g, '')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  return collapsed;
 };
 
 const normalizeCandidateToken = (value: string): string => {
@@ -377,6 +381,7 @@ const normalizeCandidateToken = (value: string): string => {
     .trim()
     .toLowerCase()
     .normalize('NFD')
+    .replace(/['’]/g, '')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')

@@ -166,9 +166,12 @@ class PdfFileMatcher
         }
 
         $value = $this->ascii($value);
+        $value = str_replace(["'", '’'], '', $value);
         $value = Str::lower($value);
 
-        return preg_replace('/[^a-z0-9]/', '', $value) ?? '';
+        $value = preg_replace('/[^a-z0-9]+/', ' ', $value) ?? '';
+
+        return trim($value);
     }
 
     private function normalizeCandidateToken(string $value): string
@@ -179,6 +182,7 @@ class PdfFileMatcher
         }
 
         $value = $this->ascii($value);
+        $value = str_replace(["'", '’'], '', $value);
         $value = Str::lower($value);
         $value = preg_replace('/[^a-z0-9]+/', ' ', $value) ?? '';
         $value = trim($value);
@@ -188,6 +192,11 @@ class PdfFileMatcher
 
     private function ascii(string $value): string
     {
+        $transliterated = Str::ascii($value);
+        if ($transliterated !== '') {
+            return $transliterated;
+        }
+
         $transliterated = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
 
         if ($transliterated === false) {
