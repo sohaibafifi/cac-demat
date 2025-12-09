@@ -3,6 +3,7 @@ import type { Menu as ElectronMenu, MenuItemConstructorOptions, MenuItem } from 
 type ApplicationMenuOptions = {
   onCheckForUpdates?: () => void | Promise<void>;
   onShowImportHelp?: () => void | Promise<void>;
+  onShowUserGuide?: () => void | Promise<void>;
   onShowAbout?: () => void | Promise<void>;
 };
 
@@ -145,6 +146,18 @@ export class ApplicationMenuBuilder {
         },
       });
     }
+    
+    if (this.options.onShowUserGuide) {
+      submenu.push({
+        id: 'user-guide',
+        label: 'Guide utilisateur',
+        click: () => {
+          void this.options.onShowUserGuide?.();
+        },
+      });
+    }
+
+    
 
     if (this.options.onShowImportHelp) {
       submenu.push({

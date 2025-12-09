@@ -1,7 +1,7 @@
 import type { BrowserWindow as ElectronBrowserWindow } from 'electron';
 import path from 'path';
 import Module from 'module';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { existsSync, readFileSync } from 'fs';
 import { createCoordinator } from '../app/coordinatorFactory.js';
 import { DashboardCoordinator } from '../app/dashboardCoordinator.js';
@@ -14,8 +14,45 @@ type ElectronModule = typeof import('electron');
 /**
  * Convert markdown to HTML with basic styling
  */
-function convertMarkdownToHtml(markdown: string): string {
-  let html = markdown
+function convertMarkdownToHtml(markdown: string, options: { title?: string; baseDir?: string } = {}): string {
+  const { title = 'Guide d\'import des fichiers', baseDir } = options;
+
+  const withImages = markdown.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, altText, rawSrc) => {
+    const src = rawSrc.trim();
+    const isRemote = /^https?:\/\//i.test(src);
+    let resolvedSrc = src;
+
+    if (!isRemote && baseDir) {
+      const absolutePath = path.resolve(baseDir, src);
+      try {
+        const imageBuffer = readFileSync(absolutePath);
+        const ext = path.extname(absolutePath).toLowerCase();
+        const mimeType = ext === '.jpg' || ext === '.jpeg'
+          ? 'image/jpeg'
+          : ext === '.webp'
+            ? 'image/webp'
+            : ext === '.gif'
+              ? 'image/gif'
+              : 'image/png';
+
+        resolvedSrc = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+      } catch (error) {
+        console.warn('[docs] Unable to inline image', absolutePath, error);
+        resolvedSrc = pathToFileURL(absolutePath).toString();
+      }
+    } else if (isRemote) {
+      resolvedSrc = src;
+    } else if (baseDir) {
+      resolvedSrc = pathToFileURL(path.resolve(baseDir, src)).toString();
+    }
+
+    return `<img src="${resolvedSrc}" alt="${altText ?? ''}" loading="lazy" />`;
+  });
+
+  const withBlockquotes = withImages.replace(/^> ?(.*)$/gim, '<blockquote><p>$1</p></blockquote>');
+  const withHorizontalRules = withBlockquotes.replace(/^\s*---\s*$/gim, '<hr>');
+
+  let html = withHorizontalRules
     // Headers (order matters - h4 before h3, etc.)
     .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
@@ -50,16 +87,23 @@ function convertMarkdownToHtml(markdown: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Guide d'import des fichiers</title>
+  <title>${title}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
       line-height: 1.6;
       color: #333;
-      max-width: 850px;
+      margin: 0;
+      padding: 0;
+      background: #f5f7fb;
+    }
+    .content {
+      max-width: 960px;
       margin: 0 auto;
-      padding: 2rem;
-      background: #f9fafb;
+      padding: 2.5rem 2rem 2rem 2rem;
+      background: #ffffff;
+      box-shadow: 0 15px 45px rgba(0,0,0,0.08);
+      border-radius: 14px;
     }
     h1 {
       color: #1f2937;
@@ -89,6 +133,11 @@ function convertMarkdownToHtml(markdown: string): string {
       font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
       font-size: 0.9em;
       color: #dc2626;
+    }
+    hr {
+      border: none;
+      border-top: 2px solid #e5e7eb;
+      margin: 2rem 0 1.5rem 0;
     }
     pre {
       background: #1f2937;
@@ -139,10 +188,29 @@ function convertMarkdownToHtml(markdown: string): string {
       color: #1f2937;
       font-weight: 600;
     }
+    blockquote {
+      border-left: 4px solid #2563eb;
+      background: #eef2ff;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      border-radius: 6px;
+      color: #1f2937;
+    }
+    blockquote p {
+      margin: 0;
+    }
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 1.25rem auto;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
   </style>
 </head>
 <body>
-  <p>${html}</p>
+  <div class="content">${html}</div>
 </body>
 </html>`;
 }
@@ -294,49 +362,50 @@ export default async function start(electron: ElectronModule): Promise<void> {
   }
 
   function setupApplicationMenu(): void {
-    const menuOptions = autoUpdateManager
-      ? {
-          onCheckForUpdates: () => autoUpdateManager.manualCheck(),
-          onShowImportHelp: () => {
-            try {
-              // Read the documentation markdown file
-              const docPath = app.isPackaged
-                ? path.join(process.resourcesPath, 'docs/FORMAT_IMPORT.md')
-                : path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../docs/FORMAT_IMPORT.md');
-              
-              const markdownContent = readFileSync(docPath, 'utf-8');
-              
-              // Create a new window to display the help
-              const helpWindow = new BrowserWindow({
-                width: 900,
-                height: 700,
-                title: 'Guide d\'import des fichiers',
-                parent: mainWindow ?? undefined,
-                modal: false,
-                webPreferences: {
-                  nodeIntegration: false,
-                  contextIsolation: true,
-                },
-              });
-
-              // Convert markdown to HTML with basic styling
-              const htmlContent = convertMarkdownToHtml(markdownContent);
-              helpWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
-              
-              helpWindow.removeMenu();
-            } catch (err) {
-              console.error('Failed to open documentation:', err);
-              dialog.showErrorBox(
-                'Erreur',
-                'Impossible d\'ouvrir le guide d\'import. Veuillez vérifier que le fichier existe.'
-              );
-            }
+    const openDocumentation = (fileName: string, windowTitle: string): void => {
+      try {
+        const docPath = app.isPackaged
+          ? path.join(process.resourcesPath, 'docs', fileName)
+          : path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../docs', fileName);
+        
+        const markdownContent = readFileSync(docPath, 'utf-8');
+        
+        // Create a new window to display the help
+        const helpWindow = new BrowserWindow({
+          width: 980,
+          height: 780,
+          title: windowTitle,
+          parent: mainWindow ?? undefined,
+          modal: false,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
           },
-          onShowAbout: () => showAboutWindow(),
-        }
-      : {
-          onShowAbout: () => showAboutWindow(),
-        };
+        });
+
+        // Convert markdown to HTML with basic styling
+        const htmlContent = convertMarkdownToHtml(markdownContent, {
+          title: windowTitle,
+          baseDir: path.dirname(docPath),
+        });
+        helpWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+        
+        helpWindow.removeMenu();
+      } catch (err) {
+        console.error(`Failed to open documentation (${fileName}):`, err);
+        dialog.showErrorBox(
+          'Erreur',
+          `Impossible d'ouvrir ${windowTitle.toLowerCase()}. Veuillez vérifier que le fichier existe.`
+        );
+      }
+    };
+
+    const menuOptions = {
+      onShowImportHelp: () => openDocumentation('FORMAT_IMPORT.md', 'Guide d\'import des fichiers'),
+      onShowUserGuide: () => openDocumentation('user_guide.md', 'Guide utilisateur'),
+      onShowAbout: () => showAboutWindow(),
+      ...(autoUpdateManager ? { onCheckForUpdates: () => autoUpdateManager.manualCheck() } : {}),
+    };
 
     const menuBuilder = new ApplicationMenuBuilder(
       Menu,
