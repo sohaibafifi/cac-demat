@@ -1,11 +1,11 @@
-import { access, readFile, writeFile, unlink } from 'fs/promises';
+import { access, readFile, writeFile, unlink, stat } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
-import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingStage.js';
+import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './contracts/pdfProcessingStage.js';
 import { runCommand } from '../../../utils/process.js';
 
 const fileExists = async (candidate: string): Promise<boolean> => {
@@ -17,34 +17,105 @@ const fileExists = async (candidate: string): Promise<boolean> => {
   }
 };
 
-export class CleanStage implements PdfProcessingStage {
+type CleanCacheResult =
+  | { type: 'unchanged' }
+  | { type: 'cleaned'; path: string };
+
+type CleanCacheEntry = {
+  signature: string;
+  result: Promise<CleanCacheResult>;
+};
+
+export class CleanStage implements PdfProcessingStage, SharedResourceStage {
   private readonly pattern = /\b\d{2}[ -]?[GPAEBSNIKT][ -]?\d{2}[ -]?\d{5}[ -]?[A-Z]{3}\b/g;
   private readonly splitPattern = /(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*[GPAEBSNIKT]\s*\))(-?\d+(?:\.\d+)?)(\(\s*\d{2}\s*\))(-?\d+(?:\.\d+)?)(\(\s*\d{5}\s*\))(-?\d+(?:\.\d+)?)(\(\s*[A-Z]{3}\s*\))/g;
+  private readonly cache = new Map<string, CleanCacheEntry>();
 
   constructor(private readonly commandResolver: QpdfCommandResolver) {}
 
   async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
-    const qdfPath = await this.convertToQdf(context.workingPath);
+    const sourcePath = context.workingPath;
+    const signature = await this.buildSignature(sourcePath);
+    const cached = this.cache.get(sourcePath);
 
-    if (!(await this.sanitizeQdf(qdfPath, logger))) {
-      await unlink(qdfPath).catch(() => undefined);
+    if (cached && cached.signature === signature) {
+      const cachedResult = await cached.result;
+      return this.applyResult(context, cachedResult);
+    }
+
+    if (cached && cached.signature !== signature) {
+      void cached.result.then((result) => this.disposeResult(result)).catch(() => undefined);
+    }
+
+    const entry: CleanCacheEntry = {
+      signature,
+      result: this.prepareCleanArtifact(sourcePath, logger)
+        .then((result) => {
+          if (result.type === 'cleaned' && context.useDefaultLogging) {
+            logger?.(`  → ${context.relativePath}: nettoyage des informations sensibles appliqué`);
+          }
+          return result;
+        })
+        .catch((error) => {
+          this.cache.delete(sourcePath);
+          throw error;
+        }),
+    };
+
+    this.cache.set(sourcePath, entry);
+    const result = await entry.result;
+    return this.applyResult(context, result);
+  }
+
+  async disposeSharedResources(): Promise<void> {
+    const entries = Array.from(this.cache.values());
+    this.cache.clear();
+
+    for (const entry of entries) {
+      try {
+        const result = await entry.result;
+        await this.disposeResult(result);
+      } catch {
+        // ignore cleanup failures for cached results
+      }
+    }
+  }
+
+  private async buildSignature(pathname: string): Promise<string> {
+    const stats = await stat(pathname);
+    return `${stats.mtimeMs}-${stats.size}`;
+  }
+
+  private applyResult(context: PdfProcessingContext, result: CleanCacheResult): PdfProcessingContext {
+    if (result.type === 'unchanged') {
       return context;
     }
 
-    let updatedContext = context.withWorkingPath(qdfPath);
+    return context.withWorkingPath(result.path, false);
+  }
+
+  private async disposeResult(result: CleanCacheResult): Promise<void> {
+    if (result.type === 'cleaned') {
+      await unlink(result.path).catch(() => undefined);
+    }
+  }
+
+  private async prepareCleanArtifact(sourcePath: string, logger?: PipelineLogger): Promise<CleanCacheResult> {
+    const qdfPath = await this.convertToQdf(sourcePath);
+
+    if (!(await this.sanitizeQdf(qdfPath, logger))) {
+      await unlink(qdfPath).catch(() => undefined);
+      return { type: 'unchanged' };
+    }
+
     try {
       const rebuiltPath = await this.rebuildPdf(qdfPath);
-
-      if (updatedContext.useDefaultLogging) {
-        logger?.(`  → ${updatedContext.relativePath}: nettoyage des informations sensibles appliqué`);
-      }
-
-      updatedContext = updatedContext.withWorkingPath(rebuiltPath, false);
-      return updatedContext;
+      await unlink(qdfPath).catch(() => undefined);
+      return { type: 'cleaned', path: rebuiltPath };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger?.(`  ⚠️ Reconstruction qpdf échouée; utilisation du QDF nettoyé. Détail: ${message}`);
-      return updatedContext.withWorkingPath(qdfPath, false);
+      return { type: 'cleaned', path: qdfPath };
     }
   }
 

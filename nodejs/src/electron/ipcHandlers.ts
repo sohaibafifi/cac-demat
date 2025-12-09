@@ -1,6 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent, Dialog, Shell, OpenDialogOptions, MessageBoxOptions } from 'electron';
 import { BrowserWindow } from 'electron';
-import type { DashboardCoordinator } from '../app/dashboardCoordinator.js';
+import type { DashboardCoordinator, ProgressState } from '../app/dashboardCoordinator.js';
 import { serializeCoordinatorState } from './coordinatorSerializer.js';
 
 export class IpcHandlerRegistry {
@@ -12,6 +12,8 @@ export class IpcHandlerRegistry {
     private readonly getMainWindow: () => BrowserWindow | null,
     private readonly getAppVersion: () => string,
   ) {}
+  private coordinatorUnsubscribe: (() => void) | null = null;
+  private coordinatorProgressUnsubscribe: (() => void) | null = null;
 
   registerAll(): void {
     this.registerCoordinatorHandlers();
@@ -20,6 +22,8 @@ export class IpcHandlerRegistry {
   }
 
   private registerCoordinatorHandlers(): void {
+    this.subscribeToCoordinatorChanges();
+
     this.ipcMain.handle('coordinator:init', async () => {
       return serializeCoordinatorState(this.getCoordinator());
     });
@@ -151,5 +155,49 @@ export class IpcHandlerRegistry {
 
   private getFocusedOrMainWindow(): BrowserWindow | undefined {
     return BrowserWindow.getFocusedWindow() ?? this.getMainWindow() ?? undefined;
+  }
+
+  private subscribeToCoordinatorChanges(): void {
+    if (this.coordinatorUnsubscribe) {
+      this.coordinatorUnsubscribe();
+      this.coordinatorUnsubscribe = null;
+    }
+    if (this.coordinatorProgressUnsubscribe) {
+      this.coordinatorProgressUnsubscribe();
+      this.coordinatorProgressUnsubscribe = null;
+    }
+
+    const coordinator = this.getCoordinator();
+    const broadcast = (): void => this.broadcastCoordinatorState();
+    this.coordinatorUnsubscribe = coordinator.onChange(broadcast);
+    this.coordinatorProgressUnsubscribe = coordinator.onProgress((progress) =>
+      this.broadcastCoordinatorProgress(progress),
+    );
+  }
+
+  private broadcastCoordinatorState(): void {
+    const window = this.getMainWindow();
+    if (!window) {
+      return;
+    }
+
+    try {
+      window.webContents.send('coordinator:update', serializeCoordinatorState(this.getCoordinator()));
+    } catch (error) {
+      console.warn('[ipc] Unable to broadcast coordinator state', error);
+    }
+  }
+
+  private broadcastCoordinatorProgress(progress: ProgressState): void {
+    const window = this.getMainWindow();
+    if (!window) {
+      return;
+    }
+
+    try {
+      window.webContents.send('coordinator:progress', progress);
+    } catch (error) {
+      console.warn('[ipc] Unable to broadcast coordinator progress', error);
+    }
   }
 }

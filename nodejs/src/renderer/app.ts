@@ -17,6 +17,15 @@ type ReviewerSummary = {
   files: ReviewerSummaryFile[];
 };
 
+type PipelineProgressState = {
+  active: boolean;
+  total: number;
+  completed: number;
+  currentFile: string | null;
+  currentRecipient: string | null;
+  mode: 'reviewers' | 'members' | null;
+};
+
 type CoordinatorState = {
   folder: string | null;
   csvReviewers: string[];
@@ -48,6 +57,7 @@ type CoordinatorState = {
     missing: number;
     outputDir: string;
   } | null;
+  progress: PipelineProgressState;
 };
 
 declare global {
@@ -140,6 +150,10 @@ const elements = {
   sectionReviewers: document.getElementById('section-reviewers') as HTMLElement,
   sectionMembers: document.getElementById('section-members') as HTMLElement,
   appVersion: document.getElementById('app-version') as HTMLElement | null,
+  progressContainer: document.getElementById('progress-card') as HTMLElement,
+  progressFill: document.getElementById('progress-fill') as HTMLElement,
+  progressLabel: document.getElementById('progress-label') as HTMLElement,
+  progressDetail: document.getElementById('progress-detail') as HTMLElement,
 };
 
 function setBusy(value: boolean): void {
@@ -153,10 +167,38 @@ function setState(state: CoordinatorState): void {
     ...state,
     csvReviewers: [...(state.csvReviewers ?? [])],
     csvMembers: [...(state.csvMembers ?? [])],
+    progress: state.progress
+      ? { ...state.progress }
+      : {
+          active: false,
+          total: 0,
+          completed: 0,
+          currentFile: null,
+          currentRecipient: null,
+          mode: null as PipelineProgressState['mode'],
+        },
   };
   currentState = normalized;
   render();
   notifyCompletionIfNeeded(normalized);
+}
+
+function setProgressState(progress: PipelineProgressState): void {
+  if (!currentState) {
+    return;
+  }
+
+  const normalized: PipelineProgressState = {
+    active: Boolean(progress.active),
+    total: Math.max(0, progress.total || 0),
+    completed: Math.max(0, progress.completed || 0),
+    currentFile: progress.currentFile ?? null,
+    currentRecipient: progress.currentRecipient ?? null,
+    mode: progress.mode ?? null,
+  };
+
+  currentState = { ...currentState, progress: normalized };
+  renderProgress();
 }
 
 function setAdvancedMode(enabled: boolean): void {
@@ -394,7 +436,48 @@ function render(): void {
   renderManualReviewers();
   renderManualMembers();
   renderMembersSelected();
+  renderProgress();
   updateActionStates();
+}
+
+function renderProgress(): void {
+  if (!currentState) return;
+  const container = elements.progressContainer;
+  const fill = elements.progressFill;
+  const label = elements.progressLabel;
+  const detail = elements.progressDetail;
+
+  if (!container || !fill || !label || !detail) {
+    return;
+  }
+
+  const progress = currentState.progress ?? {
+    active: false,
+    total: 0,
+    completed: 0,
+    currentFile: null,
+    currentRecipient: null,
+    mode: null as CoordinatorState['lastRunMode'],
+  };
+
+  const total = Math.max(0, progress.total || 0);
+  const completed = Math.min(progress.completed || 0, total || progress.completed || 0);
+  const percent = total > 0 ? Math.floor((completed / total) * 100) : 0;
+  const modeLabel = progress.mode === 'reviewers' ? 'Rapporteurs' : progress.mode === 'members' ? 'Membres' : null;
+
+  container.dataset.active = progress.active ? 'true' : 'false';
+  container.dataset.mode = modeLabel ?? '';
+  fill.style.width = `${Math.min(100, percent)}%`;
+  label.textContent = total > 0 ? `${percent}% (${completed}/${total})` : 'En attente';
+
+  const parts = [];
+  if (modeLabel) parts.push(modeLabel);
+  if (progress.currentFile) parts.push(progress.currentFile);
+  if (progress.currentRecipient) parts.push(progress.currentRecipient);
+
+  detail.textContent = parts.length > 0
+    ? parts.join(' • ')
+    : 'Pipeline en attente de tâches.';
 }
 
 function populateAvailableFiles(): void {
@@ -879,6 +962,17 @@ async function bootstrap(): Promise<void> {
     const api = await getElectronApiOrWarn();
     if (!api) {
       throw new Error('Electron bridge unavailable.');
+    }
+
+    if (api.onCoordinatorUpdate) {
+      api.onCoordinatorUpdate((state) => {
+        setState(state as CoordinatorState);
+      });
+    }
+    if (api.onCoordinatorProgress) {
+      api.onCoordinatorProgress((progress) => {
+        setProgressState(progress as PipelineProgressState);
+      });
     }
 
     const state = await api.init();

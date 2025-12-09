@@ -5,6 +5,7 @@ import {
   PdfInventoryEntry,
   PipelineLogger,
   PreparationStats,
+  PipelineProgress,
 } from '../pdf/pdfPackageProcessor.js';
 
 export interface MemberEntry {
@@ -21,6 +22,7 @@ export class MemberPreparationService {
     outputDir: string,
     collectionName: string,
     logger?: PipelineLogger,
+    progress?: (progress: PipelineProgress) => void,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
@@ -68,6 +70,8 @@ export class MemberPreparationService {
       collectionName,
       logger,
       inventory,
+      undefined,
+      progress,
     );
   }
 

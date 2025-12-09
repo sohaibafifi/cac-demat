@@ -22,6 +22,20 @@ const api = {
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),
   getAppVersion: () => ipcRenderer.invoke('system:get-version'),
   showMessageBox: (options) => ipcRenderer.invoke('dialog:show-message', options),
+  onCoordinatorUpdate: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('coordinator:update', handler);
+    return () => {
+      ipcRenderer.removeListener('coordinator:update', handler);
+    };
+  },
+  onCoordinatorProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress);
+    ipcRenderer.on('coordinator:progress', handler);
+    return () => {
+      ipcRenderer.removeListener('coordinator:progress', handler);
+    };
+  },
   onAdvancedModeChange: (callback) => {
     const handler = (_event, enabled) => callback(Boolean(enabled));
     ipcRenderer.on('view:advanced-mode', handler);

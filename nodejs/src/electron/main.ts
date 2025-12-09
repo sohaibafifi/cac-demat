@@ -439,7 +439,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
   }
 
   async function createWindow(): Promise<void> {
-    coordinator = createCoordinator();
+    coordinator = coordinator ?? createCoordinator();
 
     const windowIcon = getIconPath();
 

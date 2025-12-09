@@ -2,7 +2,7 @@ import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment, PdfFileMatch
 import { MemberPreparationService, MemberEntry } from '../services/pipeline/memberPreparationService.js';
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
-import type { PreparationStats } from '../services/pdf/pdfPackageProcessor.js';
+import type { PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
 import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
 
 export interface ManualReviewerAssignment {
@@ -46,6 +46,15 @@ export interface RunStats {
   outputDir: string;
 }
 
+export interface ProgressState {
+  active: boolean;
+  total: number;
+  completed: number;
+  currentFile: string | null;
+  currentRecipient: string | null;
+  mode: RunMode | null;
+}
+
 export class DashboardCoordinator {
   folder: string | null = null;
   csvReviewers: string[] = [];
@@ -67,10 +76,20 @@ export class DashboardCoordinator {
   lastMemberOutputDir: string | null = null;
   lastRunMode: RunMode | null = null;
   lastRunStats: RunStats | null = null;
+  progress: ProgressState = {
+    active: false,
+    total: 0,
+    completed: 0,
+    currentFile: null,
+    currentRecipient: null,
+    mode: null,
+  };
   private runCounter = 0;
   private readonly summaryBuilder = new ReviewerSummaryBuilder();
   private reviewerImports = new Map<string, ReviewerAssignment[]>();
   private memberImports = new Map<string, MemberAssignment[]>();
+  private readonly changeListeners = new Set<() => void>();
+  private readonly progressListeners = new Set<(progress: ProgressState) => void>();
 
   constructor(
     private readonly csvLoader: CsvAssignmentLoader,
@@ -78,6 +97,92 @@ export class DashboardCoordinator {
     private readonly reviewerService: ReviewerPreparationService,
     private readonly memberService: MemberPreparationService,
   ) {}
+
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  onProgress(listener: (progress: ProgressState) => void): () => void {
+    this.progressListeners.add(listener);
+    return () => this.progressListeners.delete(listener);
+  }
+
+  private emitChange(): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.warn('[coordinator] Failed to notify listener', error);
+      }
+    }
+  }
+
+  private emitProgress(): void {
+    const snapshot: ProgressState = { ...this.progress };
+    for (const listener of this.progressListeners) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        console.warn('[coordinator] Failed to notify progress listener', error);
+      }
+    }
+  }
+
+  private startProgress(mode: RunMode): void {
+    this.progress = {
+      active: false,
+      total: 0,
+      completed: 0,
+      currentFile: null,
+      currentRecipient: null,
+      mode,
+    };
+    this.emitProgress();
+    this.emitChange();
+  }
+
+  private updateProgress(update: PipelineProgress, mode: RunMode): void {
+    if (!update || update.total === 0) {
+      this.progress = {
+        active: false,
+        total: 0,
+        completed: 0,
+        currentFile: null,
+        currentRecipient: null,
+        mode: null,
+      };
+      this.emitProgress();
+      this.emitChange();
+      return;
+    }
+
+    this.progress = {
+      active: true,
+      total: update.total,
+      completed: Math.min(update.completed, update.total),
+      currentFile: update.currentFile ?? this.progress.currentFile,
+      currentRecipient: update.currentRecipient ?? this.progress.currentRecipient,
+      mode,
+    };
+
+    this.emitProgress();
+    this.emitChange();
+  }
+
+  private stopProgress(): void {
+    if (!this.progress.active && this.progress.total === 0) {
+      return;
+    }
+
+    this.progress = {
+      ...this.progress,
+      active: false,
+      mode: null,
+    };
+    this.emitProgress();
+    this.emitChange();
+  }
 
   async setFolder(folder: string): Promise<void> {
     this.folder = folder;
@@ -276,9 +381,11 @@ export class DashboardCoordinator {
     }
 
     this.resetLog();
-    this.appendLog('Initialisation du pipeline...');
+    this.startProgress('reviewers');
     this.running = true;
     this.status = 'En cours...';
+    this.emitChange();
+    this.appendLog('Initialisation du pipeline...');
 
     try {
       const packages = this.reviewerPackages();
@@ -293,7 +400,8 @@ export class DashboardCoordinator {
         this.folder,
         outputDir,
         this.cacName,
-        (message: string) => this.appendLog(message)
+        (message: string) => this.appendLog(message),
+        (update: PipelineProgress) => this.updateProgress(update, 'reviewers'),
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -322,7 +430,9 @@ export class DashboardCoordinator {
       this.status = 'Erreur';
       this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      this.stopProgress();
       this.running = false;
+      this.emitChange();
     }
   }
 
@@ -332,9 +442,11 @@ export class DashboardCoordinator {
     }
 
     this.resetLog();
-    this.appendLog('Initialisation du pipeline...');
+    this.startProgress('members');
     this.running = true;
     this.status = 'En cours...';
+    this.emitChange();
+    this.appendLog('Initialisation du pipeline...');
 
     try {
       const entries = this.combinedMembers();
@@ -349,7 +461,8 @@ export class DashboardCoordinator {
         this.folder,
         outputDir,
         this.cacName,
-        (message: string) => this.appendLog(message)
+        (message: string) => this.appendLog(message),
+        (update: PipelineProgress) => this.updateProgress(update, 'members'),
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -378,7 +491,9 @@ export class DashboardCoordinator {
       this.status = 'Erreur';
       this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      this.stopProgress();
       this.running = false;
+      this.emitChange();
     }
   }
 
@@ -598,11 +713,13 @@ export class DashboardCoordinator {
   private resetLog(): void {
     this.logMessages = [];
     this.log = '';
+    this.emitChange();
   }
 
   private appendLog(message: string): void {
     this.logMessages.push(message);
     this.log = this.logMessages.join('\n');
+    this.emitChange();
   }
 
   private getErrorMessage(error: unknown): string {

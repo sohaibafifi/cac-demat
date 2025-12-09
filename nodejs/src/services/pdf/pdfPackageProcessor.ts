@@ -1,5 +1,6 @@
 import { mkdir, readdir } from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
@@ -31,6 +32,13 @@ export interface PreparationStats {
   missingFiles: string[];
 }
 
+export interface PipelineProgress {
+  total: number;
+  completed: number;
+  currentFile?: string | null;
+  currentRecipient?: string | null;
+}
+
 export class PdfPackageProcessor {
   constructor(private readonly pipeline: PdfProcessingPipeline) {}
 
@@ -43,6 +51,7 @@ export class PdfPackageProcessor {
     logger?: PipelineLogger,
     inventory?: PdfInventoryEntry[],
     afterFileProcessed?: AfterFileProcessed,
+    progress?: (progress: PipelineProgress) => void,
   ): Promise<PreparationStats> {
     const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir));
     const lookup = new Map(entries.map((e) => [e.relative.toLowerCase(), e]));
@@ -58,6 +67,11 @@ export class PdfPackageProcessor {
       missingFiles: [],
     };
     const missing = new Set<string>();
+    const tasks: Array<() => Promise<void>> = [];
+    const processedByRecipient = new Map<string, number>();
+    const useDefaultLogging = !afterFileProcessed;
+    let completed = 0;
+    let totalTasks = 0;
 
     for (const pkg of packages) {
       const name = pkg.name.trim();
@@ -73,9 +87,6 @@ export class PdfPackageProcessor {
       const files = pkg.files.map((f) => f.trim()).filter((f) => f);
       if (files.length === 0) continue;
 
-      const useDefaultLogging = !afterFileProcessed;
-      let processedForRecipient = 0;
-
       for (const relative of files) {
         const file = lookup.get(relative.toLowerCase());
 
@@ -86,8 +97,6 @@ export class PdfPackageProcessor {
         }
 
         const destinationDir = file.relativeDir ? path.join(baseDir, file.relativeDir) : baseDir;
-        await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-
         const context = new PdfProcessingContext(
           file.path,
           file.relative,
@@ -97,23 +106,50 @@ export class PdfPackageProcessor {
           { temporaryPaths: [], password: null, useDefaultLogging },
         );
 
-        const result = await this.pipeline.process(context, logger);
-        processedForRecipient += 1;
-        stats.processedFiles += 1;
+        tasks.push(async () => {
+          await mkdir(destinationDir, { recursive: true, mode: 0o755 });
+          const result = await this.pipeline.process(context, logger);
+          stats.processedFiles += 1;
 
-        if (afterFileProcessed) {
-          await afterFileProcessed(file, name, true, result.password);
-        } else if (!useDefaultLogging && result.password) {
-          logger?.(`Processed ${file.relative} for ${name} (owner password: ${result.password})`);
-        }
-      }
+          const current = (processedByRecipient.get(name) ?? 0) + 1;
+          processedByRecipient.set(name, current);
 
-      if (processedForRecipient > 0) {
-        stats.processedRecipients += 1;
+          if (afterFileProcessed) {
+            await afterFileProcessed(file, name, true, result.password);
+          } else if (!useDefaultLogging && result.password) {
+            logger?.(`Processed ${file.relative} for ${name} (owner password: ${result.password})`);
+          }
+
+          completed += 1;
+          progress?.({
+            total: totalTasks,
+            completed,
+            currentFile: file.relative,
+            currentRecipient: name,
+          });
+        });
       }
     }
 
     stats.missingFiles = Array.from(missing).sort((a, b) => a.localeCompare(b));
+
+    totalTasks = tasks.length;
+    if (totalTasks === 0) {
+      progress?.({ total: 0, completed: 0 });
+      return stats;
+    }
+
+    progress?.({ total: totalTasks, completed: 0 });
+    const concurrency = this.resolveConcurrency(totalTasks);
+
+    try {
+      await this.runConcurrently(tasks, concurrency);
+    } finally {
+      await this.pipeline.disposeSharedResources();
+    }
+
+    stats.processedRecipients = Array.from(processedByRecipient.values()).filter((count) => count > 0).length;
+    progress?.({ total: totalTasks, completed: completed });
     return stats;
   }
 
@@ -148,5 +184,30 @@ export class PdfPackageProcessor {
     await walk(resolvedSourceDir);
     files.sort((a, b) => a.relative.localeCompare(b.relative));
     return files;
+  }
+
+  private async runConcurrently(tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> {
+    let index = 0;
+    const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+    
+    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+      while (index < tasks.length) {
+        const current = index;
+        index += 1;
+        await tasks[current]();
+        // Yield to event loop periodically to allow IPC messages to be sent
+        if (current % 2 === 0) {
+          await yieldToEventLoop();
+        }
+      }
+    });
+
+    await Promise.all(workers);
+  }
+
+  private resolveConcurrency(taskCount: number): number {
+    const cpuCount = Math.max(1, os.cpus()?.length || 1);
+    const preferred = cpuCount > 4 ? Math.min(cpuCount - 1, 6) : cpuCount;
+    return Math.max(1, Math.min(taskCount, preferred));
   }
 }

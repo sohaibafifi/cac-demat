@@ -33,6 +33,20 @@ const api = {
   getAppVersion: () => ipcRenderer.invoke('system:get-version') as Promise<string>,
   showMessageBox: (options: MessageBoxOptions) =>
     ipcRenderer.invoke('dialog:show-message', options) as Promise<MessageBoxReturnValue>,
+  onCoordinatorUpdate: (callback: (state: any) => void) => {
+    const handler = (_event: unknown, state: any) => callback(state);
+    ipcRenderer.on('coordinator:update', handler);
+    return () => {
+      ipcRenderer.removeListener('coordinator:update', handler);
+    };
+  },
+  onCoordinatorProgress: (callback: (progress: any) => void) => {
+    const handler = (_event: unknown, progress: any) => callback(progress);
+    ipcRenderer.on('coordinator:progress', handler);
+    return () => {
+      ipcRenderer.removeListener('coordinator:progress', handler);
+    };
+  },
   onAdvancedModeChange: (callback: (enabled: boolean) => void) => {
     const handler = (_event: unknown, enabled: boolean) => callback(Boolean(enabled));
     ipcRenderer.on('view:advanced-mode', handler);

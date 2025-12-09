@@ -5,6 +5,7 @@ import {
   PdfInventoryEntry,
   PipelineLogger,
   PreparationStats,
+  PipelineProgress,
 } from '../pdf/pdfPackageProcessor.js';
 
 export interface ReviewerPackage {
@@ -21,6 +22,7 @@ export class ReviewerPreparationService {
     outputDir: string,
     collectionName: string,
     logger?: PipelineLogger,
+    progress?: (progress: PipelineProgress) => void,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
@@ -54,6 +56,7 @@ export class ReviewerPreparationService {
       async (file: PdfInventoryEntry, recipient: string, _restricted: boolean, password: string | null) => {
         logger?.((`Processed ${file.relative} for ${recipient} (owner password: ${password || ''})`));
       },
+      progress,
     );
   }
 }

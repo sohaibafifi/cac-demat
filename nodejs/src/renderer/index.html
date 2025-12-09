@@ -217,6 +217,60 @@
         box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
       }
 
+      .progress-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.8rem 0.9rem;
+        background: rgba(255,255,255,0.96);
+        box-shadow: var(--shadow);
+      }
+
+      .progress-card[data-active="false"] {
+        opacity: 0.8;
+      }
+
+      .progress-card[data-active="false"] .progress-fill {
+        opacity: 0.35;
+      }
+
+      .progress-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.4rem;
+      }
+
+      .progress-label {
+        font-weight: 700;
+        color: var(--fg);
+      }
+
+      .progress-bar {
+        position: relative;
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.25);
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        transition: width 0.25s ease;
+      }
+
+      .progress-detail {
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
       .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
       .stack { grid-template-columns: 1fr !important; }
       .flow { display: flex; flex-direction: column; gap: 1rem; }
@@ -597,18 +651,28 @@ Marie Martin;.;*.pdf</pre>
         </div>
       </section>
 
-      <section class="section advanced-only">
+      <section class="section">
         <h2>Activité</h2>
         <div class="grid stack">
+          <div class="progress-card" id="progress-card" data-active="false">
+            <div class="progress-head">
+              <span class="hint">Progression du pipeline</span>
+              <span class="progress-label" id="progress-label">En attente</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-detail" id="progress-detail">Aucune tâche en cours.</div>
+          </div>
           <div class="row" style="align-items: center; gap: 0.5rem;">
             <span class="badge" id="status-badge">En attente</span>
             <span class="hint" id="status-hint">Les tâches terminées apparaîtront ici.</span>
           </div>
-          <div class="hint-row">
+          <div class="hint-row advanced-only">
             <span class="hint">Journal</span>
             <button id="toggle-log" class="collapse-toggle">Afficher ▼</button>
           </div>
-          <textarea id="log-output" readonly></textarea>
+          <textarea id="log-output" class="advanced-only" readonly></textarea>
         </div>
       </section>
     </main>

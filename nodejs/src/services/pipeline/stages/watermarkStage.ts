@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
-import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingStage.js';
+import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './contracts/pdfProcessingStage.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { runCommand } from '../../../utils/process.js';
 
@@ -16,8 +16,12 @@ const fileExists = async (candidate: string): Promise<boolean> => {
   }
 };
 
-export class WatermarkStage implements PdfProcessingStage {
+export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
   constructor(private readonly commandResolver: QpdfCommandResolver) {}
+  private readonly pageDimensionsCache = new Map<
+    string,
+    { signature: string; result: Promise<Array<{ width: number; height: number }>> }
+  >();
 
   async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
     const output = path.join(os.tmpdir(), `cac_demat_watermark_${randomUUID()}.pdf`);
@@ -134,7 +138,28 @@ export class WatermarkStage implements PdfProcessingStage {
     ].join('\n');
   }
 
+  async disposeSharedResources(): Promise<void> {
+    this.pageDimensionsCache.clear();
+  }
+
   private async getPageDimensions(sourcePath: string): Promise<Array<{ width: number; height: number }>> {
+    const signature = await this.buildSignature(sourcePath);
+    const cached = this.pageDimensionsCache.get(sourcePath);
+
+    if (cached && cached.signature === signature) {
+      return cached.result;
+    }
+
+    const result = this.loadPageDimensions(sourcePath).catch((error) => {
+      this.pageDimensionsCache.delete(sourcePath);
+      throw error;
+    });
+
+    this.pageDimensionsCache.set(sourcePath, { signature, result });
+    return result;
+  }
+
+  private async loadPageDimensions(sourcePath: string): Promise<Array<{ width: number; height: number }>> {
     const command = await this.commandResolver.resolve();
     const result = await runCommand(command, ['--warning-exit-0', '--json', sourcePath]);
 
@@ -159,6 +184,11 @@ export class WatermarkStage implements PdfProcessingStage {
     }
 
     return dimensions;
+  }
+
+  private async buildSignature(pathname: string): Promise<string> {
+    const info = await stat(pathname);
+    return `${info.mtimeMs}-${info.size}`;
   }
 
   private buildObjectIndex(sections: any[]): Record<string, any> {

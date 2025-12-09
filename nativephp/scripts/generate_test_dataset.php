@@ -8,16 +8,22 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 require __DIR__.'/../vendor/autoload.php';
 
+// Usage:
+//   php nativephp/scripts/generate_test_dataset.php [targetDir] [pdfCount]
+// Defaults to data/filename_guesser_dataset with 1000 PDFs to stress-test the pipeline.
+
 $projectRoot = dirname(__DIR__, 2);
 $targetRoot = $argv[1] ?? $projectRoot.'/data/filename_guesser_dataset';
+$requestedCount = isset($argv[2]) ? max(1, (int) $argv[2]) : 1000;
 $pdfRoot = $targetRoot.'/pdfs';
 
 echo "Generating filename guesser test set in {$targetRoot}\n";
+echo "Requested PDF count: {$requestedCount}\n";
 
 ensureWritableTarget($targetRoot, $projectRoot);
 ensureDirectory($pdfRoot);
 
-$pdfEntries = [
+$basePdfEntries = [
     [
         'relative' => 'dupont_jean.pdf',
         'title' => 'Jean Dupont',
@@ -65,6 +71,13 @@ $pdfEntries = [
     ],
 ];
 
+[$bulkPdfEntries, $bulkReviewers, $bulkMembers] = buildBulkDataset(
+    max(0, $requestedCount - count($basePdfEntries)),
+    count($basePdfEntries) + 1
+);
+
+$pdfEntries = array_merge($basePdfEntries, $bulkPdfEntries);
+
 foreach ($pdfEntries as $entry) {
     $path = $pdfRoot.'/'.$entry['relative'];
     ensureDirectory(dirname($path));
@@ -79,23 +92,26 @@ writeReviewersWorkbook($reviewersPath, [
     ['nom' => 'De La Tour', 'prenom' => 'Jean Pierre', 'r1' => 'Rapporteur Imbriqué', 'r2' => ''],
     ['nom' => 'García López', 'prenom' => 'Élodie Anne', 'r1' => 'Rapporteur Accent', 'r2' => ''],
     ['nom' => "D'Angelo", 'prenom' => 'Marco', 'r1' => 'Rapporteur Apostrophe', 'r2' => ''],
+    ...$bulkReviewers,
 ]);
 
 $membersPath = $targetRoot.'/members.xlsx';
 writeMembersWorkbook($membersPath, [
     ['name' => 'Jean Dupont', 'files' => ['dupont_jean.pdf']],
-    ['name' => 'Jean-Marc Martin', 'files' => ['Jean Marc Martin']],
-    ['name' => 'Luca Van Der Poel', 'files' => ['team-europe/']],
-    ['name' => 'Jean Pierre De La Tour', 'files' => ['nested/']],
-    ['name' => 'Élodie Anne García López', 'files' => ['accented/*.pdf']],
-    ['name' => "Marco D'Angelo", 'files' => ["Marco D'Angelo"]],
-    ['name' => 'Sarah Connor', 'files' => ['.']],
+    ['name' => 'Jean-Marc Martin', 'files' => ['martin_jean-marc.pdf']],
+    ['name' => 'Luca Van Der Poel', 'files' => ['team-europe/van der poel luca.pdf']],
+    ['name' => 'Jean Pierre De La Tour', 'files' => ['nested/de la tour_jean pierre.pdf']],
+    ['name' => 'Élodie Anne García López', 'files' => ['accented/García López - Élodie Anne.pdf']],
+    ['name' => "Marco D'Angelo", 'files' => ["accented/d'angelo - marco.pdf"]],
+    ['name' => 'Sarah Connor', 'files' => ['root only/sarah_connor.pdf']],
     ['name' => 'Tous les fichiers', 'files' => []],
+    ...$bulkMembers,
 ]);
 
 echo "PDF source directory: {$pdfRoot}\n";
 echo "Reviewers workbook   : {$reviewersPath}\n";
 echo "Members workbook     : {$membersPath}\n";
+echo "Total PDFs generated : ".count($pdfEntries)."\n";
 
 /**
  * Ensure the target path exists and is inside the project to avoid accidental deletion elsewhere.
@@ -307,4 +323,50 @@ function asciiOnly(string $value): string
     }
 
     return preg_replace('/[^\x20-\x7E]/', '', $converted) ?? '';
+}
+
+/**
+ * Generate a large, predictable dataset of PDFs and spreadsheet rows.
+ *
+ * @return array{0: array<int,array{relative:string,title:string,lines:array}>, 1: array<int,array{nom:string,prenom:string,r1:string,r2:string}>, 2: array<int,array{name:string,files:array}>}
+ */
+function buildBulkDataset(int $count, int $startIndex = 1): array
+{
+    if ($count <= 0) {
+        return [[], [], []];
+    }
+
+    $pdfEntries = [];
+    $reviewers = [];
+    $members = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $index = $startIndex + $i;
+        $batch = intdiv($i, 100);
+        $slug = sprintf('bulk_%04d_dataset', $index);
+        $relative = sprintf('bulk/batch_%02d/%s.pdf', $batch, $slug);
+
+        $pdfEntries[] = [
+            'relative' => $relative,
+            'title' => sprintf('Bulk Dataset %04d', $index),
+            'lines' => [
+                sprintf('PDF auto-généré #%04d', $index),
+                'Cas de charge pour tests volumétriques',
+            ],
+        ];
+
+        $reviewers[] = [
+            'nom' => sprintf('Bulk %04d', $index),
+            'prenom' => 'Dataset',
+            'r1' => sprintf('Rapporteur Lot %02d-A', $batch),
+            'r2' => sprintf('Rapporteur Lot %02d-B', $batch),
+        ];
+
+        $members[] = [
+            'name' => sprintf('Dataset Bulk%04d', $index),
+            'files' => [$relative],
+        ];
+    }
+
+    return [$pdfEntries, $reviewers, $members];
 }

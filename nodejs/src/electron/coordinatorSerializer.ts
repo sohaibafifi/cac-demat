@@ -32,6 +32,14 @@ export interface SerializedCoordinatorState {
     missing: number;
     outputDir: string;
   } | null;
+  progress: {
+    active: boolean;
+    total: number;
+    completed: number;
+    currentFile: string | null;
+    currentRecipient: string | null;
+    mode: 'reviewers' | 'members' | null;
+  };
 }
 
 export function serializeCoordinatorState(coordinator: DashboardCoordinator): SerializedCoordinatorState {
@@ -101,5 +109,13 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
           outputDir: coordinator.lastRunStats.outputDir,
         }
       : null,
+    progress: {
+      active: coordinator.progress.active,
+      total: coordinator.progress.total,
+      completed: coordinator.progress.completed,
+      currentFile: coordinator.progress.currentFile,
+      currentRecipient: coordinator.progress.currentRecipient,
+      mode: coordinator.progress.mode,
+    },
   };
 }
