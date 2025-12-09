@@ -252,6 +252,9 @@
       .link-action { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.82rem; padding: 0; text-decoration: underline; }
 
       .path-display { font-size: 0.82rem; color: var(--accent); margin-top: 0.25rem; word-break: break-all; }
+      .path-display[data-empty="true"] { color: var(--muted); }
+      .path-list { display: flex; flex-direction: column; gap: 0.35rem; }
+      .path-pill { display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(37,99,235,0.08); color: var(--fg); padding: 0.35rem 0.5rem; border-radius: 10px; border: 1px solid rgba(37,99,235,0.18); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); word-break: break-all; }
 
       ul { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.45rem; max-height: 240px; overflow-y: auto; padding-right: 4px; }
 
@@ -410,7 +413,7 @@
         <div class="grid">
           <div class="card-group">
             <strong>Import tableur</strong>
-            <p class="text-muted">Chargez un fichier Excel (.xls/.xlsx/.csv) structuré en colonnes Nom (ou Nom d'usage), Prénom, Rapporteur 1, Rapporteur 2.</p>
+            <p class="text-muted">Chargez un ou plusieurs fichiers Excel (.xls/.xlsx/.csv) structurés en colonnes Nom (ou Nom d'usage), Prénom, Rapporteur 1, Rapporteur 2.</p>
             <details class="format-help" style="margin: 0.75rem 0; padding: 0.75rem; background: rgba(37,99,235,0.05); border-radius: 8px; border-left: 3px solid #2563eb;">
               <summary style="cursor: pointer; font-weight: 600; color: #2563eb; user-select: none;">
                 ℹ️ Format du fichier d'import
@@ -458,8 +461,9 @@ Martin,Marie,Prenom3 Nom3,Prenom4 Nom4</pre>
               </div>
             </details>
             <div class="csv-row">
-              <button id="load-reviewers-csv" class="secondary csv-btn">📄 Charger le fichier</button>
+              <button id="load-reviewers-csv" class="secondary csv-btn">📄 Ajouter un fichier</button>
               <button id="open-reviewers-csv" class="secondary csv-btn">Ouvrir</button>
+              <button id="reset-reviewers-csv" class="danger csv-btn">↩️ Réinitialiser</button>
             </div>
             <div class="path-display" id="reviewers-csv-path">Aucun fichier sélectionné</div>
           </div>
@@ -517,7 +521,7 @@ Martin,Marie,Prenom3 Nom3,Prenom4 Nom4</pre>
         <div class="grid">
           <div class="card-group">
             <strong>Import tableur</strong>
-            <p class="text-muted">Chargez un fichier CSV ou Excel (.xls/.xlsx) pour attribuer les membres automatiquement.</p>
+            <p class="text-muted">Chargez un ou plusieurs fichiers CSV ou Excel (.xls/.xlsx) pour attribuer les membres automatiquement.</p>
             <details class="format-help" style="margin: 0.75rem 0; padding: 0.75rem; background: rgba(37,99,235,0.05); border-radius: 8px; border-left: 3px solid #2563eb;">
               <summary style="cursor: pointer; font-weight: 600; color: #2563eb; user-select: none;">
                 ℹ️ Format du fichier d'import
@@ -535,8 +539,9 @@ Marie Martin;.;*.pdf</pre>
               </div>
             </details>
             <div class="csv-row">
-              <button id="load-members-csv" class="secondary csv-btn">📄 Charger le fichier</button>
+              <button id="load-members-csv" class="secondary csv-btn">📄 Ajouter un fichier</button>
               <button id="open-members-csv" class="secondary csv-btn">Ouvrir</button>
+              <button id="reset-members-csv" class="danger csv-btn">↩️ Réinitialiser</button>
             </div>
             <div class="path-display" id="members-csv-path">Aucun fichier sélectionné</div>
           </div>

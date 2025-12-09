@@ -48,8 +48,8 @@ export interface RunStats {
 
 export class DashboardCoordinator {
   folder: string | null = null;
-  csvReviewers: string | null = null;
-  csvMembers: string | null = null;
+  csvReviewers: string[] = [];
+  csvMembers: string[] = [];
   availableFiles: string[] = [];
   reviewersFromCsv: ReviewerAssignment[] = [];
   reviewersManual: ManualReviewerAssignment[] = [];
@@ -69,6 +69,8 @@ export class DashboardCoordinator {
   lastRunStats: RunStats | null = null;
   private runCounter = 0;
   private readonly summaryBuilder = new ReviewerSummaryBuilder();
+  private reviewerImports = new Map<string, ReviewerAssignment[]>();
+  private memberImports = new Map<string, MemberAssignment[]>();
 
   constructor(
     private readonly csvLoader: CsvAssignmentLoader,
@@ -84,28 +86,69 @@ export class DashboardCoordinator {
   }
 
   async loadReviewersCsv(path: string): Promise<void> {
-    this.csvReviewers = path;
-    this.appendLog(`Fichier des rapporteurs sélectionné: ${path}`);
+    const normalized = path.trim();
+    if (!normalized) {
+      this.appendLog('Chemin du fichier rapporteurs invalide.');
+      return;
+    }
+
+    const existed = this.reviewerImports.has(normalized);
+    this.csvReviewers = [...this.csvReviewers.filter((p) => p !== normalized), normalized];
+    this.appendLog(`${existed ? 'Rechargement' : 'Ajout'} du fichier des rapporteurs: ${normalized}`);
+
+    const previous = this.reviewerImports.get(normalized) ?? [];
 
     try {
-      this.reviewersFromCsv = await this.csvLoader.reviewers(path, this.availableFiles);
+      const assignments = await this.csvLoader.reviewers(normalized, this.availableFiles);
+      this.reviewerImports.set(normalized, assignments);
+      this.refreshReviewersFromImports();
       this.appendLog('Attributions de rapporteurs importées.');
       await this.checkReviewerFileWarnings();
     } catch (error) {
+      this.reviewerImports.set(normalized, previous);
       this.appendLog(`Échec de lecture du fichier des rapporteurs: ${this.getErrorMessage(error)}`);
     }
   }
 
   async loadMembersCsv(path: string): Promise<void> {
-    this.csvMembers = path;
-    this.appendLog(`Fichier des membres sélectionné: ${path}`);
+    const normalized = path.trim();
+    if (!normalized) {
+      this.appendLog('Chemin du fichier membres invalide.');
+      return;
+    }
+
+    const existed = this.memberImports.has(normalized);
+    this.csvMembers = [...this.csvMembers.filter((p) => p !== normalized), normalized];
+    this.appendLog(`${existed ? 'Rechargement' : 'Ajout'} du fichier des membres: ${normalized}`);
+
+    const previous = this.memberImports.get(normalized) ?? [];
 
     try {
-      this.membersFromCsv = await this.csvLoader.members(path, this.availableFiles);
+      const assignments = await this.csvLoader.members(normalized, this.availableFiles);
+      this.memberImports.set(normalized, assignments);
+      this.refreshMembersFromImports();
       this.appendLog('Membres importés.');
     } catch (error) {
+      this.memberImports.set(normalized, previous);
       this.appendLog(`Échec de lecture du fichier des membres: ${this.getErrorMessage(error)}`);
     }
+  }
+
+  clearReviewersCsv(): void {
+    this.csvReviewers = [];
+    this.reviewerImports.clear();
+    this.reviewersFromCsv = [];
+    this.missingReviewerFiles = [];
+    this.missingReviewerNames = [];
+    this.appendLog('Import des rapporteurs réinitialisé.');
+    void this.checkReviewerFileWarnings(false);
+  }
+
+  clearMembersCsv(): void {
+    this.csvMembers = [];
+    this.memberImports.clear();
+    this.membersFromCsv = [];
+    this.appendLog('Import des membres réinitialisé.');
   }
 
   addManualReviewer(file: string, reviewerNames: string | string[]): void {
@@ -198,18 +241,33 @@ export class DashboardCoordinator {
       })),
     ];
 
-    const seen = new Set<string>();
-    const unique: MemberEntry[] = [];
+    const merged = new Map<string, { name: string; files: string[] }>();
 
     for (const entry of combined) {
       const key = entry.name.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push({ name: entry.name, files: entry.files });
+      const normalizedFiles = Array.isArray(entry.files) ? entry.files : [];
+      const existing = merged.get(key);
+
+      if (!existing) {
+        merged.set(key, { name: entry.name, files: [...normalizedFiles] });
+        continue;
+      }
+
+      if (existing.files.length === 0 || normalizedFiles.length === 0) {
+        existing.files = [];
+      } else {
+        existing.files = Array.from(new Set([...existing.files, ...normalizedFiles]));
+      }
+
+      if (existing.name.trim() === '' && entry.name.trim() !== '') {
+        existing.name = entry.name;
       }
     }
 
-    return unique;
+    return Array.from(merged.values()).map((entry) => ({
+      name: entry.name,
+      files: [...entry.files],
+    }));
   }
 
   async runReviewers(): Promise<void> {
@@ -345,25 +403,108 @@ export class DashboardCoordinator {
       (entry) => entry.type === 'file' && entry.name.toLowerCase().endsWith('.pdf'),
     );
 
-    if (this.csvReviewers) {
-      try {
-        this.reviewersFromCsv = await this.csvLoader.reviewers(this.csvReviewers, this.availableFiles);
-      } catch (error) {
-        this.appendLog(`Échec de relecture du fichier des rapporteurs: ${this.getErrorMessage(error)}`);
-      }
-    }
-
-    if (this.csvMembers) {
-      try {
-        this.membersFromCsv = await this.csvLoader.members(this.csvMembers, this.availableFiles);
-      } catch (error) {
-        this.appendLog(`Échec de relecture du fichier des membres: ${this.getErrorMessage(error)}`);
-      }
-    }
+    await this.reloadCsvImports();
 
     if (this.reviewersFromCsv.length > 0 || this.reviewersManual.length > 0) {
       await this.checkReviewerFileWarnings(false);
     }
+  }
+
+  private async reloadCsvImports(): Promise<void> {
+    const nextReviewerImports = new Map<string, ReviewerAssignment[]>();
+    for (const file of this.csvReviewers) {
+      const previous = this.reviewerImports.get(file) ?? [];
+      try {
+        const assignments = await this.csvLoader.reviewers(file, this.availableFiles);
+        nextReviewerImports.set(file, assignments);
+      } catch (error) {
+        nextReviewerImports.set(file, previous);
+        this.appendLog(`Échec de relecture du fichier des rapporteurs (${file}): ${this.getErrorMessage(error)}`);
+      }
+    }
+    this.reviewerImports = nextReviewerImports;
+    this.refreshReviewersFromImports();
+
+    const nextMemberImports = new Map<string, MemberAssignment[]>();
+    for (const file of this.csvMembers) {
+      const previous = this.memberImports.get(file) ?? [];
+      try {
+        const assignments = await this.csvLoader.members(file, this.availableFiles);
+        nextMemberImports.set(file, assignments);
+      } catch (error) {
+        nextMemberImports.set(file, previous);
+        this.appendLog(`Échec de relecture du fichier des membres (${file}): ${this.getErrorMessage(error)}`);
+      }
+    }
+    this.memberImports = nextMemberImports;
+    this.refreshMembersFromImports();
+  }
+
+  private refreshReviewersFromImports(): void {
+    const merged = new Map<string, { file: string; reviewers: Set<string>; label?: string }>();
+
+    const assignments = this.csvReviewers.flatMap((file) => this.reviewerImports.get(file) ?? []);
+
+    for (const assignment of assignments) {
+      const file = (assignment.file ?? '').trim();
+      if (!file) {
+        continue;
+      }
+
+      const key = file.toLowerCase();
+      if (!merged.has(key)) {
+        merged.set(key, { file, reviewers: new Set<string>(), label: assignment.label });
+      }
+
+      const entry = merged.get(key)!;
+      assignment.reviewers.forEach((reviewer) => {
+        const trimmed = reviewer?.trim();
+        if (trimmed) {
+          entry.reviewers.add(trimmed);
+        }
+      });
+
+      if (!entry.label && assignment.label) {
+        entry.label = assignment.label;
+      }
+    }
+
+    this.reviewersFromCsv = Array.from(merged.values()).map((entry) => ({
+      file: entry.file,
+      reviewers: Array.from(entry.reviewers),
+      source: 'csv' as const,
+      label: entry.label,
+    }));
+  }
+
+  private refreshMembersFromImports(): void {
+    const merged = new Map<string, MemberAssignment>();
+
+    const assignments = this.csvMembers.flatMap((file) => this.memberImports.get(file) ?? []);
+
+    for (const assignment of assignments) {
+      const name = (assignment.name ?? '').trim();
+      if (!name) {
+        continue;
+      }
+
+      const key = name.toLowerCase();
+      const files = Array.isArray(assignment.files) ? assignment.files : [];
+      const existing = merged.get(key);
+
+      if (!existing) {
+        merged.set(key, { name, files: [...files], source: 'csv' as const });
+        continue;
+      }
+
+      if (existing.files.length === 0 || files.length === 0) {
+        existing.files = [];
+      } else {
+        existing.files = Array.from(new Set([...existing.files, ...files]));
+      }
+    }
+
+    this.membersFromCsv = Array.from(merged.values());
   }
 
   private async checkReviewerFileWarnings(shouldLog = true): Promise<void> {

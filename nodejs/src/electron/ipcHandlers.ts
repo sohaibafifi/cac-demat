@@ -46,6 +46,18 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
+    this.ipcMain.handle('coordinator:clear-reviewers-csv', async () => {
+      const coordinator = this.getCoordinator();
+      coordinator.clearReviewersCsv();
+      return serializeCoordinatorState(coordinator);
+    });
+
+    this.ipcMain.handle('coordinator:clear-members-csv', async () => {
+      const coordinator = this.getCoordinator();
+      coordinator.clearMembersCsv();
+      return serializeCoordinatorState(coordinator);
+    });
+
     this.ipcMain.handle('coordinator:set-cac-name', async (_event: IpcMainInvokeEvent, cacName: string) => {
       const coordinator = this.getCoordinator();
       coordinator.cacName = cacName;

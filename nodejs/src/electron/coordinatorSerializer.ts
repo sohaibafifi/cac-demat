@@ -2,8 +2,8 @@ import type { DashboardCoordinator } from '../app/dashboardCoordinator.js';
 
 export interface SerializedCoordinatorState {
   folder: string | null;
-  csvReviewers: string | null;
-  csvMembers: string | null;
+  csvReviewers: string[];
+  csvMembers: string[];
   availableFiles: string[];
   reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv'; label?: string }>;
   reviewersManual: Array<{ file: string; reviewers: string[]; source: 'manual' }>;
@@ -37,8 +37,8 @@ export interface SerializedCoordinatorState {
 export function serializeCoordinatorState(coordinator: DashboardCoordinator): SerializedCoordinatorState {
   return {
     folder: coordinator.folder,
-    csvReviewers: coordinator.csvReviewers,
-    csvMembers: coordinator.csvMembers,
+    csvReviewers: [...coordinator.csvReviewers],
+    csvMembers: [...coordinator.csvMembers],
     availableFiles: [...coordinator.availableFiles],
     reviewersFromCsv: coordinator.reviewersFromCsv.map((entry) => ({
       file: entry.file,

@@ -136,7 +136,7 @@ export class CsvAssignmentLoader {
 
     const matcher = availableFiles.length > 0 ? new PdfFileMatcher(availableFiles) : null;
 
-    const memberKeyLc = ['member', 'membre'].find((key) => headerMap.has(key));
+    const memberKeyLc = ['member', 'membre', 'membres', 'members'].find((key) => headerMap.has(key));
     if (memberKeyLc) {
       const memberHeader = headerMap.get(memberKeyLc)!; // original header as it appears in row keys
       const assignments = new Map<string, MemberAssignment>();
@@ -218,14 +218,14 @@ export class CsvAssignmentLoader {
       const assignments = new Map<string, MemberAssignment>();
 
       for (const row of normalizedRows) {
-        const name = row.get('nom') ?? row.get('name') ?? row.get('membre') ?? '';
+        const name = row.get('nom') ?? row.get('name') ?? row.get('membres')?? row.get('membre') ?? '';
         if (!name) {
           continue;
         }
 
         const files: string[] = [];
         for (const [key, value] of row.entries()) {
-          if (key === 'nom' || key === 'name' || key === 'membre') {
+          if (key === 'nom' || key === 'name' || key === 'membres'|| key === 'membre') {
             continue;
           }
 

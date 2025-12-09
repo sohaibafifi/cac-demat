@@ -13,6 +13,8 @@ const api = {
   setFolder: (folder: string) => ipcRenderer.invoke('coordinator:set-folder', folder) as Promise<any>,
   setReviewersCsv: (filePath: string) => ipcRenderer.invoke('coordinator:set-reviewers-csv', filePath) as Promise<any>,
   setMembersCsv: (filePath: string) => ipcRenderer.invoke('coordinator:set-members-csv', filePath) as Promise<any>,
+  clearReviewersCsv: () => ipcRenderer.invoke('coordinator:clear-reviewers-csv') as Promise<any>,
+  clearMembersCsv: () => ipcRenderer.invoke('coordinator:clear-members-csv') as Promise<any>,
   setCacName: (name: string) => ipcRenderer.invoke('coordinator:set-cac-name', name) as Promise<any>,
   addManualReviewer: (payload: { file: string; reviewers: string }) =>
     ipcRenderer.invoke('coordinator:add-manual-reviewer', payload) as Promise<any>,

@@ -19,8 +19,8 @@ type ReviewerSummary = {
 
 type CoordinatorState = {
   folder: string | null;
-  csvReviewers: string | null;
-  csvMembers: string | null;
+  csvReviewers: string[];
+  csvMembers: string[];
   availableFiles: string[];
   reviewersFromCsv: Array<{ file: string; reviewers: string[]; source: 'csv'; label?: string }>;
   reviewersManual: Array<{ file: string; reviewers: string[]; source: 'manual' }>;
@@ -122,7 +122,9 @@ const elements = {
   openMembersCsv: document.getElementById('open-members-csv') as HTMLButtonElement,
   selectFolder: document.getElementById('select-folder') as HTMLButtonElement,
   loadReviewersCsv: document.getElementById('load-reviewers-csv') as HTMLButtonElement,
+  resetReviewersCsv: document.getElementById('reset-reviewers-csv') as HTMLButtonElement,
   loadMembersCsv: document.getElementById('load-members-csv') as HTMLButtonElement,
+  resetMembersCsv: document.getElementById('reset-members-csv') as HTMLButtonElement,
   manualReviewerForm: document.getElementById('manual-reviewer-form') as HTMLFormElement,
   manualMemberForm: document.getElementById('manual-member-form') as HTMLFormElement,
   openOutputReviewers: document.getElementById('open-output-reviewers') as HTMLButtonElement,
@@ -147,9 +149,14 @@ function setBusy(value: boolean): void {
 }
 
 function setState(state: CoordinatorState): void {
-  currentState = state;
+  const normalized = {
+    ...state,
+    csvReviewers: [...(state.csvReviewers ?? [])],
+    csvMembers: [...(state.csvMembers ?? [])],
+  };
+  currentState = normalized;
   render();
-  notifyCompletionIfNeeded(state);
+  notifyCompletionIfNeeded(normalized);
 }
 
 function setAdvancedMode(enabled: boolean): void {
@@ -277,14 +284,30 @@ function updateActionStates(): void {
     elements.openFolder.disabled = true;
     elements.openReviewersCsv.disabled = true;
     elements.openMembersCsv.disabled = true;
+    elements.resetReviewersCsv.disabled = true;
+    elements.resetMembersCsv.disabled = true;
+    elements.selectFolder.disabled = true;
+    elements.loadReviewersCsv.disabled = true;
+    elements.loadMembersCsv.disabled = true;
+    elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
+      (node as HTMLInputElement | HTMLButtonElement).disabled = true;
+    });
+    elements.manualMemberForm.querySelectorAll('input, button').forEach((node) => {
+      (node as HTMLInputElement | HTMLButtonElement).disabled = true;
+    });
     return;
   }
+
+  const hasReviewerCsv = currentState.csvReviewers.length > 0;
+  const hasMemberCsv = currentState.csvMembers.length > 0;
 
   elements.runReviewers.disabled = busy || !currentState.canRunReviewers;
   elements.runMembers.disabled = busy || !currentState.canRunMembers;
   elements.openFolder.disabled = busy || !currentState.folder;
-  elements.openReviewersCsv.disabled = busy || !currentState.csvReviewers;
-  elements.openMembersCsv.disabled = busy || !currentState.csvMembers;
+  elements.openReviewersCsv.disabled = busy || !hasReviewerCsv;
+  elements.resetReviewersCsv.disabled = busy || !hasReviewerCsv;
+  elements.openMembersCsv.disabled = busy || !hasMemberCsv;
+  elements.resetMembersCsv.disabled = busy || !hasMemberCsv;
   elements.selectFolder.disabled = busy;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
@@ -300,20 +323,37 @@ function formatPath(pathValue: string | null, fallback: string): string {
   return pathValue && pathValue.trim() !== '' ? pathValue : fallback;
 }
 
+function renderCsvPaths(target: HTMLElement, paths: string[], fallback: string): void {
+  target.innerHTML = '';
+
+  if (!paths || paths.length === 0) {
+    target.textContent = fallback;
+    target.dataset.empty = 'true';
+    return;
+  }
+
+  target.dataset.empty = 'false';
+  const list = document.createElement('div');
+  list.className = 'path-list';
+
+  paths.forEach((value, index) => {
+    const pill = document.createElement('span');
+    pill.className = 'path-pill';
+    pill.textContent = paths.length > 1 ? `${index + 1}. ${value}` : value;
+    list.appendChild(pill);
+  });
+
+  target.appendChild(list);
+}
+
 function render(): void {
   if (!currentState) {
     return;
   }
 
   elements.folderPath.textContent = formatPath(currentState.folder, 'Aucun dossier sélectionné');
-  elements.reviewersCsvPath.textContent = formatPath(
-    currentState.csvReviewers,
-    'Aucun fichier sélectionné',
-  );
-  elements.membersCsvPath.textContent = formatPath(
-    currentState.csvMembers,
-    'Aucun fichier sélectionné',
-  );
+  renderCsvPaths(elements.reviewersCsvPath, currentState.csvReviewers, 'Aucun fichier sélectionné');
+  renderCsvPaths(elements.membersCsvPath, currentState.csvMembers, 'Aucun fichier sélectionné');
 
   if (elements.cacNameInput.value !== currentState.cacName) {
     elements.cacNameInput.value = currentState.cacName;
@@ -633,19 +673,15 @@ function renderMembersSelected(): void {
   const root = elements.membersSelected;
   root.innerHTML = '';
 
-  // Merge CSV and manual members, preserving manual flag
-  const merged = [
-    ...(currentState.membersFromCsv || []).map((entry) => ({
-      name: entry.name,
-      files: Array.isArray(entry.files) ? entry.files : [],
-      manual: false,
-    })),
-    ...(currentState.membersManual || []).map((entry) => ({
-      name: entry.name,
-      files: Array.isArray(entry.files) ? entry.files : [],
-      manual: true,
-    })),
-  ];
+  const manualNames = new Set(
+    (currentState.membersManual || []).map((entry) => (entry.name ?? '').toLowerCase()).filter((name) => name !== ''),
+  );
+
+  const merged = (currentState.combinedMembers || []).map((entry) => ({
+    name: entry.name,
+    files: Array.isArray(entry.files) ? entry.files : [],
+    manual: manualNames.has((entry.name ?? '').toLowerCase()),
+  }));
 
   if (merged.length === 0) {
     const span = document.createElement('span');
@@ -655,16 +691,7 @@ function renderMembersSelected(): void {
     return;
   }
 
-  // Deduplicate by name (case-insensitive)
-  const seen = new Set<string>();
-  const list = merged.filter((e) => {
-    const key = e.name.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  list.sort((a, b) => a.name.localeCompare(b.name));
+  const list = merged.sort((a, b) => a.name.localeCompare(b.name));
 
   list.forEach((entry) => {
     const container = document.createElement('div');
@@ -768,6 +795,57 @@ async function showReviewerImportSummary(state: CoordinatorState | null): Promis
       inferredMissingNames.length > 0
         ? 'Certaines attributions n’ont pas pu être associées à un fichier.'
         : 'Import des rapporteurs terminé.',
+    detail: lines.join('\n'),
+  });
+}
+
+async function showMemberImportSummary(state: CoordinatorState | null): Promise<void> {
+  if (!state) {
+    return;
+  }
+
+  const totalMembers = state.membersFromCsv.length;
+  const membersWithSelection = state.membersFromCsv.filter((entry) => (entry.files?.length ?? 0) > 0).length;
+  const membersWithAllFiles = Math.max(totalMembers - membersWithSelection, 0);
+  const totalFileRefs = state.membersFromCsv.reduce((sum, entry) => sum + (entry.files?.length ?? 0), 0);
+
+  const previewNames = state.membersFromCsv
+    .map((entry) => entry.name?.trim() ?? '')
+    .filter((name) => name.length > 0)
+    .slice(0, 8);
+
+  const lines: string[] = [
+    `Membres importés : ${totalMembers}`,
+    `Références de fichiers : ${totalFileRefs}`,
+  ];
+
+  if (membersWithSelection > 0) {
+    lines.push(`Avec sélection ciblée : ${membersWithSelection}`);
+  }
+
+  if (membersWithAllFiles > 0) {
+    lines.push(`Tous les fichiers attribués : ${membersWithAllFiles}`);
+  }
+
+  if (previewNames.length > 0) {
+    lines.push('', 'Aperçu :', previewNames.join(', '));
+    if (state.membersFromCsv.length > previewNames.length) {
+      lines.push(`… +${state.membersFromCsv.length - previewNames.length} autre(s)`);
+    }
+  }
+
+  const api = await resolveElectronApi();
+  if (!api?.showMessageBox) {
+    return;
+  }
+
+  await api.showMessageBox({
+    type: totalMembers === 0 ? 'warning' : 'info',
+    buttons: ['Fermer'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Import des membres',
+    message: totalMembers === 0 ? 'Aucun membre importé.' : 'Import des membres terminé.',
     detail: lines.join('\n'),
   });
 }
@@ -896,17 +974,32 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   elements.openReviewersCsv.addEventListener('click', async () => {
-    if (!currentState?.csvReviewers) {
+    const paths = currentState?.csvReviewers ?? [];
+    if (paths.length === 0) {
       return;
     }
 
     try {
       const api = await resolveElectronApi();
-      await api?.openPath(currentState.csvReviewers);
+      await api?.openPath(paths[paths.length - 1]);
     } catch (error) {
       console.error(error);
       alert(formatError(error));
     }
+  });
+
+  elements.resetReviewersCsv.addEventListener('click', async () => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    const shouldReset = confirm('Réinitialiser tous les imports de rapporteurs ?');
+    if (!shouldReset) {
+      return;
+    }
+
+    await updateCoordinator(() => api.clearReviewersCsv());
   });
 
   elements.loadMembersCsv.addEventListener('click', async () => {
@@ -920,21 +1013,37 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    await updateCoordinator(() => api.setMembersCsv(selected));
+    const state = await updateCoordinator(() => api.setMembersCsv(selected));
+    await showMemberImportSummary(state);
   });
 
   elements.openMembersCsv.addEventListener('click', async () => {
-    if (!currentState?.csvMembers) {
+    const paths = currentState?.csvMembers ?? [];
+    if (paths.length === 0) {
       return;
     }
 
     try {
       const api = await resolveElectronApi();
-      await api?.openPath(currentState.csvMembers);
+      await api?.openPath(paths[paths.length - 1]);
     } catch (error) {
       console.error(error);
       alert(formatError(error));
     }
+  });
+
+  elements.resetMembersCsv.addEventListener('click', async () => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    const shouldReset = confirm('Réinitialiser tous les imports de membres ?');
+    if (!shouldReset) {
+      return;
+    }
+
+    await updateCoordinator(() => api.clearMembersCsv());
   });
 
   elements.manualReviewerForm.addEventListener('submit', async (event) => {
