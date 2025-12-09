@@ -3,6 +3,7 @@ import type { Menu as ElectronMenu, MenuItemConstructorOptions, MenuItem } from 
 type ApplicationMenuOptions = {
   onCheckForUpdates?: () => void | Promise<void>;
   onShowImportHelp?: () => void | Promise<void>;
+  onShowAbout?: () => void | Promise<void>;
 };
 
 export class ApplicationMenuBuilder {
@@ -134,6 +135,16 @@ export class ApplicationMenuBuilder {
 
   private buildHelpMenu(): MenuItemConstructorOptions {
     const submenu: MenuItemConstructorOptions[] = [];
+
+    if (this.options.onShowAbout) {
+      submenu.push({
+        id: 'about',
+        label: `À propos de ${this.appName}`,
+        click: () => {
+          void this.options.onShowAbout?.();
+        },
+      });
+    }
 
     if (this.options.onShowImportHelp) {
       submenu.push({

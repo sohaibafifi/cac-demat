@@ -13,6 +13,12 @@ const commandSourceCandidates = [
   path.join(projectRoot, 'resources', 'commands'),
   path.join(projectRoot, '..', 'nativephp', 'resources', 'commands'),
 ];
+const iconSourceDirs = [
+  path.join(projectRoot, 'build'),
+  path.join(projectRoot, '..', 'nativephp', 'public'),
+];
+const iconFiles = ['icon.png', 'icon.ico', 'icon.icns'];
+const iconDstDir = path.join(projectRoot, 'dist', 'assets');
 
 const platform = process.platform; // 'darwin', 'win32', 'linux'
 const bundledNodeModules = ['xlsx', 'electron-updater'];
@@ -77,6 +83,24 @@ if (!fs.existsSync(sourceHtml)) {
 
 fs.mkdirSync(targetDir, { recursive: true });
 fs.copyFileSync(sourceHtml, path.join(targetDir, 'index.html'));
+
+fs.mkdirSync(iconDstDir, { recursive: true });
+let copiedIcons = 0;
+for (const iconFile of iconFiles) {
+  for (const srcDir of iconSourceDirs) {
+    const candidate = path.join(srcDir, iconFile);
+    if (fs.existsSync(candidate)) {
+      fs.copyFileSync(candidate, path.join(iconDstDir, iconFile));
+      copiedIcons += 1;
+      console.log(`[copy-electron-assets] Copied ${iconFile} from ${path.relative(projectRoot, srcDir) || '.'}`);
+      break;
+    }
+  }
+}
+
+if (copiedIcons === 0) {
+  console.warn('[copy-electron-assets] No icon assets found; Electron will fall back to defaults.');
+}
 
 const copyNodeModule = (moduleName) => {
   const source = path.join(projectRoot, 'node_modules', moduleName);

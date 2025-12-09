@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const baseIconPath = path.join(__dirname, 'assets', 'icon');
+const baseIconPath = path.join(__dirname, 'build', 'icon');
 
 const buildIgnoredPatterns = (directory) => {
   const platforms = ['mac', 'win', 'linux'];
