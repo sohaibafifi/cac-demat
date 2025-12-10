@@ -61,7 +61,7 @@ class RestrictionStage implements PdfProcessingStage
             '256',
             '--print=none',
             '--extract=n',
-            '--modify=none',
+            '--modify=annotate',
             '--',
             $resolvedInput,
             $outputPath,
