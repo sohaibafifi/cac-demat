@@ -5,6 +5,7 @@ type ApplicationMenuOptions = {
   onShowImportHelp?: () => void | Promise<void>;
   onShowUserGuide?: () => void | Promise<void>;
   onShowAbout?: () => void | Promise<void>;
+  onStopPipeline?: () => void | Promise<void>;
 };
 
 export class ApplicationMenuBuilder {
@@ -90,6 +91,16 @@ export class ApplicationMenuBuilder {
           type: 'checkbox',
           checked: advancedMode,
           click: (menuItem: MenuItem) => onAdvancedModeToggle(menuItem.checked),
+        },
+        { type: 'separator' },
+        {
+          label: 'Arrêter le pipeline en cours',
+          id: 'stop-pipeline',
+          accelerator: 'CmdOrCtrl+.',
+          enabled: Boolean(this.options.onStopPipeline),
+          click: () => {
+            void this.options.onStopPipeline?.();
+          },
         },
       ],
     };

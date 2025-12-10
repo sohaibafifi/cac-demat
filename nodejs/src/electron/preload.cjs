@@ -18,6 +18,7 @@ const api = {
   removeManualMember: (index) => ipcRenderer.invoke('coordinator:remove-manual-member', index),
   setManualMemberFiles: (payload) => ipcRenderer.invoke('coordinator:set-manual-member-files', payload),
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
+  stopPipeline: () => ipcRenderer.invoke('coordinator:stop'),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),
   getAppVersion: () => ipcRenderer.invoke('system:get-version'),

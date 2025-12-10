@@ -404,6 +404,7 @@ export default async function start(electron: ElectronModule): Promise<void> {
       onShowImportHelp: () => openDocumentation('FORMAT_IMPORT.md', 'Guide d\'import des fichiers'),
       onShowUserGuide: () => openDocumentation('user_guide.md', 'Guide utilisateur'),
       onShowAbout: () => showAboutWindow(),
+      onStopPipeline: () => getCoordinator().requestStop(),
       ...(autoUpdateManager ? { onCheckForUpdates: () => autoUpdateManager.manualCheck() } : {}),
     };
 

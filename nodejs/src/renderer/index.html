@@ -240,6 +240,30 @@
         margin-bottom: 0.4rem;
       }
 
+      .progress-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      #stop-pipeline {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+      }
+
+      #stop-pipeline:disabled {
+        background: rgba(148, 163, 184, 0.35);
+        color: #475569;
+      }
+
+      [data-busy="true"] #stop-pipeline:not(:disabled) {
+        opacity: 1;
+        cursor: pointer;
+      }
+
+      .progress-actions button {
+        padding: 0.35rem 0.75rem;
+      }
+
       .progress-label {
         font-weight: 700;
         color: var(--fg);
@@ -657,7 +681,10 @@ Marie Martin;.;*.pdf</pre>
           <div class="progress-card" id="progress-card" data-active="false">
             <div class="progress-head">
               <span class="hint">Progression du pipeline</span>
-              <span class="progress-label" id="progress-label">En attente</span>
+              <div class="progress-actions">
+                <span class="progress-label" id="progress-label">En attente</span>
+                <button type="button" id="stop-pipeline" class="danger" disabled>⏹️ Arrêter</button>
+              </div>
             </div>
             <div class="progress-bar">
               <div class="progress-fill" id="progress-fill"></div>

@@ -6,6 +6,7 @@ export interface RunCommandOptions {
   timeoutMs?: number;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
+  abortSignal?: AbortSignal;
 }
 
 export interface RunCommandResult {
@@ -30,6 +31,7 @@ export function runCommand(
     let stderr = '';
     let finished = false;
     let timeout: NodeJS.Timeout | undefined;
+    const abortSignal = options.abortSignal;
 
     const cleanup = () => {
       if (timeout) {
@@ -40,6 +42,7 @@ export function runCommand(
       child.stderr?.off('data', handleStderr);
       child.off('error', handleError);
       child.off('close', handleClose);
+      abortSignal?.removeEventListener('abort', handleAbort);
     };
 
     const handleStdout = (chunk: Buffer) => {
@@ -72,10 +75,30 @@ export function runCommand(
       resolve({ exitCode: code, stdout, stderr });
     };
 
+    const handleAbort = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      cleanup();
+      child.kill('SIGKILL');
+
+      const reason = (abortSignal as { reason?: unknown } | null | undefined)?.reason;
+      const error = reason instanceof Error ? reason : new Error('Command aborted');
+      error.name = reason instanceof Error ? reason.name : 'AbortError';
+      reject(error);
+    };
+
     child.stdout?.on('data', handleStdout);
     child.stderr?.on('data', handleStderr);
     child.on('error', handleError);
     child.on('close', handleClose);
+    abortSignal?.addEventListener('abort', handleAbort);
+
+    if (abortSignal?.aborted) {
+      handleAbort();
+      return;
+    }
 
     if (options.timeoutMs && options.timeoutMs > 0) {
       timeout = setTimeout(() => {

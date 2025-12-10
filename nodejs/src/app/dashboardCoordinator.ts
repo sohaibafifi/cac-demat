@@ -3,6 +3,7 @@ import { MemberPreparationService, MemberEntry } from '../services/pipeline/memb
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
 import type { PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
+import { isPipelineCancelledError, PipelineCancelledError } from '../services/pipeline/pipelineCancelledError.js';
 import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
 
 export interface ManualReviewerAssignment {
@@ -85,6 +86,8 @@ export class DashboardCoordinator {
     mode: null,
   };
   private runCounter = 0;
+  private abortController: AbortController | null = null;
+  private stopRequested = false;
   private readonly summaryBuilder = new ReviewerSummaryBuilder();
   private reviewerImports = new Map<string, ReviewerAssignment[]>();
   private memberImports = new Map<string, MemberAssignment[]>();
@@ -182,6 +185,18 @@ export class DashboardCoordinator {
     };
     this.emitProgress();
     this.emitChange();
+  }
+
+  requestStop(): void {
+    if (!this.running || !this.abortController || this.stopRequested) {
+      return;
+    }
+
+    this.stopRequested = true;
+    this.status = 'Arrêt en cours';
+    this.appendLog('Arrêt du pipeline demandé...');
+    this.emitChange();
+    this.abortController.abort(new PipelineCancelledError('Pipeline interrompu par l’utilisateur.'));
   }
 
   async setFolder(folder: string): Promise<void> {
@@ -383,6 +398,8 @@ export class DashboardCoordinator {
     this.resetLog();
     this.startProgress('reviewers');
     this.running = true;
+    this.stopRequested = false;
+    this.abortController = new AbortController();
     this.status = 'En cours...';
     this.emitChange();
     this.appendLog('Initialisation du pipeline...');
@@ -402,6 +419,7 @@ export class DashboardCoordinator {
         this.cacName,
         (message: string) => this.appendLog(message),
         (update: PipelineProgress) => this.updateProgress(update, 'reviewers'),
+        this.abortController.signal,
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -427,11 +445,18 @@ export class DashboardCoordinator {
       this.status = 'Terminé';
       this.appendLog('Pipeline terminé avec succès.');
     } catch (error) {
-      this.status = 'Erreur';
-      this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+      if (isPipelineCancelledError(error)) {
+        this.status = 'Interrompu';
+        this.appendLog('Pipeline interrompu par l’utilisateur.');
+      } else {
+        this.status = 'Erreur';
+        this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
       this.stopProgress();
       this.running = false;
+      this.abortController = null;
+      this.stopRequested = false;
       this.emitChange();
     }
   }
@@ -444,6 +469,8 @@ export class DashboardCoordinator {
     this.resetLog();
     this.startProgress('members');
     this.running = true;
+    this.stopRequested = false;
+    this.abortController = new AbortController();
     this.status = 'En cours...';
     this.emitChange();
     this.appendLog('Initialisation du pipeline...');
@@ -463,6 +490,7 @@ export class DashboardCoordinator {
         this.cacName,
         (message: string) => this.appendLog(message),
         (update: PipelineProgress) => this.updateProgress(update, 'members'),
+        this.abortController.signal,
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -488,11 +516,18 @@ export class DashboardCoordinator {
       this.status = 'Terminé';
       this.appendLog('Pipeline terminé avec succès.');
     } catch (error) {
-      this.status = 'Erreur';
-      this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+      if (isPipelineCancelledError(error)) {
+        this.status = 'Interrompu';
+        this.appendLog('Pipeline interrompu par l’utilisateur.');
+      } else {
+        this.status = 'Erreur';
+        this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
       this.stopProgress();
       this.running = false;
+      this.abortController = null;
+      this.stopRequested = false;
       this.emitChange();
     }
   }

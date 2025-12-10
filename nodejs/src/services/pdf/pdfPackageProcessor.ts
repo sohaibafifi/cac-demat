@@ -4,6 +4,7 @@ import os from 'os';
 import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
+import { throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 
 export interface PdfInventoryEntry {
   path: string;
@@ -52,8 +53,10 @@ export class PdfPackageProcessor {
     inventory?: PdfInventoryEntry[],
     afterFileProcessed?: AfterFileProcessed,
     progress?: (progress: PipelineProgress) => void,
+    abortSignal?: AbortSignal,
   ): Promise<PreparationStats> {
-    const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir));
+    throwIfPipelineCancelled(abortSignal);
+    const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir, abortSignal));
     const lookup = new Map(entries.map((e) => [e.relative.toLowerCase(), e]));
 
     const collectionFolder = collectionName.trim()
@@ -72,8 +75,10 @@ export class PdfPackageProcessor {
     const useDefaultLogging = !afterFileProcessed;
     let completed = 0;
     let totalTasks = 0;
+    const throwIfCancelled = () => throwIfPipelineCancelled(abortSignal);
 
     for (const pkg of packages) {
+      throwIfCancelled();
       const name = pkg.name.trim();
       if (!name) continue;
 
@@ -88,6 +93,7 @@ export class PdfPackageProcessor {
       if (files.length === 0) continue;
 
       for (const relative of files) {
+        throwIfCancelled();
         const file = lookup.get(relative.toLowerCase());
 
         if (!file) {
@@ -107,8 +113,9 @@ export class PdfPackageProcessor {
         );
 
         tasks.push(async () => {
+          throwIfCancelled();
           await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-          const result = await this.pipeline.process(context, logger);
+          const result = await this.pipeline.process(context, logger, abortSignal);
           stats.processedFiles += 1;
 
           const current = (processedByRecipient.get(name) ?? 0) + 1;
@@ -139,11 +146,12 @@ export class PdfPackageProcessor {
       return stats;
     }
 
+    throwIfCancelled();
     progress?.({ total: totalTasks, completed: 0 });
     const concurrency = this.resolveConcurrency(totalTasks);
 
     try {
-      await this.runConcurrently(tasks, concurrency);
+      await this.runConcurrently(tasks, concurrency, abortSignal);
     } finally {
       await this.pipeline.disposeSharedResources();
     }
@@ -153,13 +161,16 @@ export class PdfPackageProcessor {
     return stats;
   }
 
-  async collectPdfFiles(resolvedSourceDir: string): Promise<PdfInventoryEntry[]> {
+  async collectPdfFiles(resolvedSourceDir: string, abortSignal?: AbortSignal): Promise<PdfInventoryEntry[]> {
+    throwIfPipelineCancelled(abortSignal);
     const files: PdfInventoryEntry[] = [];
 
     const walk = async (current: string): Promise<void> => {
+      throwIfPipelineCancelled(abortSignal);
       const entries = await readdir(current, { withFileTypes: true });
 
       for (const dirent of entries) {
+        throwIfPipelineCancelled(abortSignal);
         const fullPath = path.join(current, dirent.name);
 
         if (dirent.isDirectory()) {
@@ -186,18 +197,28 @@ export class PdfPackageProcessor {
     return files;
   }
 
-  private async runConcurrently(tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> {
+  private async runConcurrently(
+    tasks: Array<() => Promise<void>>,
+    concurrency: number,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
     let index = 0;
     const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+    const throwIfCancelled = () => throwIfPipelineCancelled(abortSignal);
     
     const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
-      while (index < tasks.length) {
+      while (true) {
+        throwIfCancelled();
         const current = index;
+        if (current >= tasks.length) {
+          break;
+        }
         index += 1;
         await tasks[current]();
         // Yield to event loop periodically to allow IPC messages to be sent
         if (current % 2 === 0) {
           await yieldToEventLoop();
+          throwIfCancelled();
         }
       }
     });

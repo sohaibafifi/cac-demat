@@ -1,6 +1,7 @@
 import { unlink } from 'fs/promises';
 import { PdfProcessingContext } from '../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './stages/contracts/pdfProcessingStage.js';
+import { throwIfPipelineCancelled } from './pipelineCancelledError.js';
 
 const isSharedResourceStage = (
   stage: PdfProcessingStage | SharedResourceStage,
@@ -11,15 +12,26 @@ const isSharedResourceStage = (
 export class PdfProcessingPipeline {
   constructor(private readonly stages: PdfProcessingStage[]) {}
 
-  async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
+  async process(
+    context: PdfProcessingContext,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PdfProcessingContext> {
     let current = context;
 
-    for (const stage of this.stages) {
-      current = await stage.process(current, logger);
-    }
+    try {
+      throwIfPipelineCancelled(abortSignal);
 
-    await this.cleanup(current);
-    return current;
+      for (const stage of this.stages) {
+        throwIfPipelineCancelled(abortSignal);
+        current = await stage.process(current, logger, abortSignal);
+      }
+
+      throwIfPipelineCancelled(abortSignal);
+      return current;
+    } finally {
+      await this.cleanup(current);
+    }
   }
 
   private async cleanup(context: PdfProcessingContext): Promise<void> {

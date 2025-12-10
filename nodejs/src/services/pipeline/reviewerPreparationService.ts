@@ -23,11 +23,12 @@ export class ReviewerPreparationService {
     collectionName: string,
     logger?: PipelineLogger,
     progress?: (progress: PipelineProgress) => void,
+    abortSignal?: AbortSignal,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
-    const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir);
+    const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir, abortSignal);
 
     const normalisedPackages: PdfPackage[] = packages
       .map((pkg) => ({
@@ -57,6 +58,7 @@ export class ReviewerPreparationService {
         logger?.((`Processed ${file.relative} for ${recipient} (owner password: ${password || ''})`));
       },
       progress,
+      abortSignal,
     );
   }
 }

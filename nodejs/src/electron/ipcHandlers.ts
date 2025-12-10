@@ -103,6 +103,12 @@ export class IpcHandlerRegistry {
       await coordinator.executeRun(mode);
       return serializeCoordinatorState(coordinator);
     });
+
+    this.ipcMain.handle('coordinator:stop', async () => {
+      const coordinator = this.getCoordinator();
+      coordinator.requestStop();
+      return serializeCoordinatorState(coordinator);
+    });
   }
 
   private registerDialogHandlers(): void {

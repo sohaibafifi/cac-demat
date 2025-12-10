@@ -6,6 +6,7 @@ import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './contracts/pdfProcessingStage.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { runCommand } from '../../../utils/process.js';
+import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
 
 const fileExists = async (candidate: string): Promise<boolean> => {
   try {
@@ -23,9 +24,14 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     { signature: string; result: Promise<Array<{ width: number; height: number }>> }
   >();
 
-  async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
+  async process(
+    context: PdfProcessingContext,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PdfProcessingContext> {
+    throwIfPipelineCancelled(abortSignal);
     const output = path.join(os.tmpdir(), `cac_demat_watermark_${randomUUID()}.pdf`);
-    await this.applyWatermark(context.workingPath, output, context.recipient);
+    await this.applyWatermark(context.workingPath, output, context.recipient, abortSignal);
 
     if (context.useDefaultLogging) {
       logger?.(`  → ${context.relativePath}: watermark ${context.recipient} applied`);
@@ -34,20 +40,29 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     return context.withWorkingPath(output);
   }
 
-  private async applyWatermark(sourcePath: string, outputPath: string, label: string): Promise<void> {
+  private async applyWatermark(
+    sourcePath: string,
+    outputPath: string,
+    label: string,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
     await mkdir(path.dirname(outputPath), { recursive: true });
 
+    throwIfPipelineCancelled(abortSignal);
     const text = label.trim().toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu, '') || 'WATERMARK';
-    const pages = await this.getPageDimensions(sourcePath);
+    const pages = await this.getPageDimensions(sourcePath, abortSignal);
+    throwIfPipelineCancelled(abortSignal);
     const overlayPath = await this.generateOverlayPdf(pages, text);
 
     try {
-      await this.applyOverlayWithQpdf(sourcePath, overlayPath, outputPath);
+      throwIfPipelineCancelled(abortSignal);
+      await this.applyOverlayWithQpdf(sourcePath, overlayPath, outputPath, abortSignal);
     } finally {
       await unlink(overlayPath).catch(() => undefined);
     }
 
-    await this.optimisePdfWithQpdf(outputPath);
+    throwIfPipelineCancelled(abortSignal);
+    await this.optimisePdfWithQpdf(outputPath, abortSignal);
   }
 
   private async generateOverlayPdf(pages: Array<{ width: number; height: number }>, text: string): Promise<string> {
@@ -142,7 +157,11 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     this.pageDimensionsCache.clear();
   }
 
-  private async getPageDimensions(sourcePath: string): Promise<Array<{ width: number; height: number }>> {
+  private async getPageDimensions(
+    sourcePath: string,
+    abortSignal?: AbortSignal,
+  ): Promise<Array<{ width: number; height: number }>> {
+    throwIfPipelineCancelled(abortSignal);
     const signature = await this.buildSignature(sourcePath);
     const cached = this.pageDimensionsCache.get(sourcePath);
 
@@ -150,7 +169,7 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
       return cached.result;
     }
 
-    const result = this.loadPageDimensions(sourcePath).catch((error) => {
+    const result = this.loadPageDimensions(sourcePath, abortSignal).catch((error) => {
       this.pageDimensionsCache.delete(sourcePath);
       throw error;
     });
@@ -159,9 +178,12 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     return result;
   }
 
-  private async loadPageDimensions(sourcePath: string): Promise<Array<{ width: number; height: number }>> {
+  private async loadPageDimensions(
+    sourcePath: string,
+    abortSignal?: AbortSignal,
+  ): Promise<Array<{ width: number; height: number }>> {
     const command = await this.commandResolver.resolve();
-    const result = await runCommand(command, ['--warning-exit-0', '--json', sourcePath]);
+    const result = await runCommand(command, ['--warning-exit-0', '--json', sourcePath], { abortSignal });
 
     if (result.exitCode !== 0) {
       const error = result.stderr.trim() || result.stdout.trim() || 'inconnue';
@@ -245,7 +267,12 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     return null;
   }
 
-  private async applyOverlayWithQpdf(sourcePath: string, overlayPath: string, outputPath: string): Promise<void> {
+  private async applyOverlayWithQpdf(
+    sourcePath: string,
+    overlayPath: string,
+    outputPath: string,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
     const command = await this.commandResolver.resolve();
     const result = await runCommand(command, [
       '--warning-exit-0',
@@ -255,7 +282,7 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
       '--repeat=1-z',
       '--',
       outputPath,
-    ]);
+    ], { abortSignal });
 
     if (result.exitCode !== 0) {
       const error = result.stderr.trim() || result.stdout.trim();
@@ -263,7 +290,7 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
     }
   }
 
-  private async optimisePdfWithQpdf(pdfPath: string): Promise<void> {
+  private async optimisePdfWithQpdf(pdfPath: string, abortSignal?: AbortSignal): Promise<void> {
     const command = await this.commandResolver.resolve();
     const tempPath = `${pdfPath}.tmp`;
 
@@ -273,7 +300,7 @@ export class WatermarkStage implements PdfProcessingStage, SharedResourceStage {
       '--compress-streams=y',
       pdfPath,
       tempPath,
-    ]);
+    ], { abortSignal });
 
     if (result.exitCode === 0 && (await fileExists(tempPath))) {
       await unlink(pdfPath).catch(() => undefined);

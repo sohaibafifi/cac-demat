@@ -7,6 +7,7 @@ import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './contracts/pdfProcessingStage.js';
 import { runCommand } from '../../../utils/process.js';
+import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
 
 const fileExists = async (candidate: string): Promise<boolean> => {
   try {
@@ -33,7 +34,12 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
 
   constructor(private readonly commandResolver: QpdfCommandResolver) {}
 
-  async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
+  async process(
+    context: PdfProcessingContext,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PdfProcessingContext> {
+    throwIfPipelineCancelled(abortSignal);
     const sourcePath = context.workingPath;
     const signature = await this.buildSignature(sourcePath);
     const cached = this.cache.get(sourcePath);
@@ -49,7 +55,7 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
 
     const entry: CleanCacheEntry = {
       signature,
-      result: this.prepareCleanArtifact(sourcePath, logger)
+      result: this.prepareCleanArtifact(sourcePath, logger, abortSignal)
         .then((result) => {
           if (result.type === 'cleaned' && context.useDefaultLogging) {
             logger?.(`  → ${context.relativePath}: nettoyage des informations sensibles appliqué`);
@@ -100,16 +106,23 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
     }
   }
 
-  private async prepareCleanArtifact(sourcePath: string, logger?: PipelineLogger): Promise<CleanCacheResult> {
-    const qdfPath = await this.convertToQdf(sourcePath);
+  private async prepareCleanArtifact(
+    sourcePath: string,
+    logger: PipelineLogger | undefined,
+    abortSignal?: AbortSignal,
+  ): Promise<CleanCacheResult> {
+    throwIfPipelineCancelled(abortSignal);
+    const qdfPath = await this.convertToQdf(sourcePath, abortSignal);
 
-    if (!(await this.sanitizeQdf(qdfPath, logger))) {
+    throwIfPipelineCancelled(abortSignal);
+
+    if (!(await this.sanitizeQdf(qdfPath, logger, abortSignal))) {
       await unlink(qdfPath).catch(() => undefined);
       return { type: 'unchanged' };
     }
 
     try {
-      const rebuiltPath = await this.rebuildPdf(qdfPath);
+      const rebuiltPath = await this.rebuildPdf(qdfPath, abortSignal);
       await unlink(qdfPath).catch(() => undefined);
       return { type: 'cleaned', path: rebuiltPath };
     } catch (error) {
@@ -119,7 +132,7 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
     }
   }
 
-  private async convertToQdf(sourcePath: string): Promise<string> {
+  private async convertToQdf(sourcePath: string, abortSignal?: AbortSignal): Promise<string> {
     const command = await this.commandResolver.resolve();
     const qdfPath = path.join(os.tmpdir(), `cac_demat_qdf_${randomUUID()}.pdf`);
 
@@ -130,7 +143,7 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
       '--qdf',
       sourcePath,
       qdfPath,
-    ]);
+    ], { abortSignal });
 
     const success = result.exitCode === 0 && (await fileExists(qdfPath));
     if (!success) {
@@ -142,7 +155,12 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
     return qdfPath;
   }
 
-  private async sanitizeQdf(pathname: string, logger?: PipelineLogger): Promise<boolean> {
+  private async sanitizeQdf(
+    pathname: string,
+    logger: PipelineLogger | undefined,
+    abortSignal?: AbortSignal,
+  ): Promise<boolean> {
+    throwIfPipelineCancelled(abortSignal);
     const buffer = await readFile(pathname);
     const source = buffer.toString('latin1');
 
@@ -180,11 +198,11 @@ export class CleanStage implements PdfProcessingStage, SharedResourceStage {
     return true;
   }
 
-  private async rebuildPdf(qdfPath: string): Promise<string> {
+  private async rebuildPdf(qdfPath: string, abortSignal?: AbortSignal): Promise<string> {
     const command = await this.commandResolver.resolve();
     const rebuiltPath = path.join(os.tmpdir(), `cac_demat_clean_${randomUUID()}.pdf`);
 
-    const result = await runCommand(command, ['--warning-exit-0', qdfPath, rebuiltPath]);
+    const result = await runCommand(command, ['--warning-exit-0', qdfPath, rebuiltPath], { abortSignal });
     const success = result.exitCode === 0 && (await fileExists(rebuiltPath));
 
     if (!success) {

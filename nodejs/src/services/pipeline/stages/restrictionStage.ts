@@ -5,6 +5,7 @@ import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingSta
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { PasswordGenerator } from '../../../support/security/passwordGenerator.js';
 import { runCommand } from '../../../utils/process.js';
+import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
 
 export class RestrictionStage implements PdfProcessingStage {
   constructor(
@@ -12,11 +13,16 @@ export class RestrictionStage implements PdfProcessingStage {
     private readonly passwordGenerator: PasswordGenerator,
   ) {}
 
-  async process(context: PdfProcessingContext, logger?: PipelineLogger): Promise<PdfProcessingContext> {
+  async process(
+    context: PdfProcessingContext,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PdfProcessingContext> {
+    throwIfPipelineCancelled(abortSignal);
     const finalPath = context.targetPath();
     const password = this.passwordGenerator.generate(12);
 
-    await this.applyRestrictions(context.workingPath, finalPath, password, logger);
+    await this.applyRestrictions(context.workingPath, finalPath, password, logger, abortSignal);
 
     if (context.useDefaultLogging) {
       logger?.(`Processed ${context.relativePath} for ${context.recipient} (owner password: ${password})`);
@@ -30,7 +36,9 @@ export class RestrictionStage implements PdfProcessingStage {
     outputPath: string,
     password: string,
     logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
   ): Promise<void> {
+    throwIfPipelineCancelled(abortSignal);
     await mkdir(path.dirname(outputPath), { recursive: true });
     const command = await this.commandResolver.resolve();
 
@@ -44,7 +52,7 @@ export class RestrictionStage implements PdfProcessingStage {
         '256',
         '--print=none',
         '--extract=n',
-        '--modify=none',
+        '--modify=annotate',
         '--',
         inputPath,
         outputPath,
@@ -62,6 +70,7 @@ export class RestrictionStage implements PdfProcessingStage {
             if (trimmed) logger?.(`[qpdf] ${trimmed}`);
           }
         },
+        abortSignal,
       },
     );
 

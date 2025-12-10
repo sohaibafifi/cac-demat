@@ -23,11 +23,12 @@ export class MemberPreparationService {
     collectionName: string,
     logger?: PipelineLogger,
     progress?: (progress: PipelineProgress) => void,
+    abortSignal?: AbortSignal,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
-    const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir);
+    const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir, abortSignal);
     if (inventory.length === 0) {
       throw new Error(`Aucun fichier PDF trouvé dans ${sourceDir}.`);
     }
@@ -72,6 +73,7 @@ export class MemberPreparationService {
       inventory,
       undefined,
       progress,
+      abortSignal,
     );
   }
 

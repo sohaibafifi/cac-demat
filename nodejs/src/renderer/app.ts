@@ -127,6 +127,7 @@ const elements = {
   manualMemberFiles: document.getElementById('manual-member-files') as HTMLInputElement,
   runReviewers: document.getElementById('run-reviewers') as HTMLButtonElement,
   runMembers: document.getElementById('run-members') as HTMLButtonElement,
+  stopPipeline: document.getElementById('stop-pipeline') as HTMLButtonElement,
   openFolder: document.getElementById('open-folder') as HTMLButtonElement,
   openReviewersCsv: document.getElementById('open-reviewers-csv') as HTMLButtonElement,
   openMembersCsv: document.getElementById('open-members-csv') as HTMLButtonElement,
@@ -323,6 +324,7 @@ function updateActionStates(): void {
   if (!currentState) {
     elements.runReviewers.disabled = true;
     elements.runMembers.disabled = true;
+    elements.stopPipeline.disabled = true;
     elements.openFolder.disabled = true;
     elements.openReviewersCsv.disabled = true;
     elements.openMembersCsv.disabled = true;
@@ -345,6 +347,7 @@ function updateActionStates(): void {
 
   elements.runReviewers.disabled = busy || !currentState.canRunReviewers;
   elements.runMembers.disabled = busy || !currentState.canRunMembers;
+  elements.stopPipeline.disabled = !currentState.running;
   elements.openFolder.disabled = busy || !currentState.folder;
   elements.openReviewersCsv.disabled = busy || !hasReviewerCsv;
   elements.resetReviewersCsv.disabled = busy || !hasReviewerCsv;
@@ -416,6 +419,9 @@ function render(): void {
   if (status === 'Terminé') {
     elements.statusBadge.style.background = 'rgba(34,197,94,0.18)';
     elements.statusBadge.style.color = '#166534';
+  } else if (status === 'Interrompu' || status === 'Arrêt en cours') {
+    elements.statusBadge.style.background = 'rgba(234,88,12,0.16)';
+    elements.statusBadge.style.color = '#c2410c';
   } else if (status === 'Erreur') {
     elements.statusBadge.style.background = 'rgba(248,113,113,0.18)';
     elements.statusBadge.style.color = '#b91c1c';
@@ -429,7 +435,11 @@ function render(): void {
       ? 'Dernière exécution réussie.'
       : currentState.status === 'Erreur'
         ? 'Consultez le journal pour plus de détails.'
-        : 'Les tâches terminées apparaîtront ici.';
+        : currentState.status === 'Interrompu'
+          ? 'Exécution interrompue par l’utilisateur.'
+          : currentState.status === 'Arrêt en cours'
+            ? 'Arrêt en cours...'
+            : 'Les tâches terminées apparaîtront ici.';
 
   renderMissingFiles();
   renderReviewerSummaries();
@@ -474,6 +484,18 @@ function renderProgress(): void {
   if (modeLabel) parts.push(modeLabel);
   if (progress.currentFile) parts.push(progress.currentFile);
   if (progress.currentRecipient) parts.push(progress.currentRecipient);
+
+  if (currentState.status === 'Arrêt en cours') {
+    detail.textContent = parts.length > 0
+      ? `Arrêt en cours • ${parts.join(' • ')}`
+      : 'Arrêt en cours...';
+    return;
+  }
+
+  if (!progress.active && currentState.status === 'Interrompu') {
+    detail.textContent = 'Pipeline interrompu.';
+    return;
+  }
 
   detail.textContent = parts.length > 0
     ? parts.join(' • ')
@@ -1204,6 +1226,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await updateCoordinator(() => api.runPipeline('members'));
+  });
+
+  elements.stopPipeline.addEventListener('click', async () => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    try {
+      const state = await api.stopPipeline();
+      if (state) {
+        setState(state as CoordinatorState);
+      }
+    } catch (error) {
+      console.error(error);
+      alert(formatError(error));
+    }
   });
 
   elements.openOutputReviewers.addEventListener('click', async () => {

@@ -28,6 +28,7 @@ const api = {
     ipcRenderer.invoke('coordinator:set-manual-member-files', payload) as Promise<any>,
   runPipeline: (mode: 'reviewers' | 'members') =>
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
+  stopPipeline: () => ipcRenderer.invoke('coordinator:stop') as Promise<any>,
   openPath: (filePath: string) => ipcRenderer.invoke('coordinator:open-path', filePath) as Promise<boolean>,
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode') as Promise<boolean>,
   getAppVersion: () => ipcRenderer.invoke('system:get-version') as Promise<string>,
