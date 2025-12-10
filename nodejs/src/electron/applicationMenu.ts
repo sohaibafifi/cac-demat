@@ -62,30 +62,12 @@ export class ApplicationMenuBuilder {
   }
 
   private buildEditMenu(): MenuItemConstructorOptions {
-    const commonItems: MenuItemConstructorOptions[] = [
-      { role: 'undo' },
-      { role: 'redo' },
-      { type: 'separator' },
-      { role: 'cut' },
-      { role: 'copy' },
-      { role: 'paste' },
-    ];
-
-    const platformItems: MenuItemConstructorOptions[] = this.isMac
-      ? [
-          { role: 'pasteAndMatchStyle' },
-          { role: 'delete' },
-          { role: 'selectAll' },
-        ]
-      : [
-          { role: 'delete' },
-          { type: 'separator' },
-          { role: 'selectAll' },
-        ];
-
     return {
       label: 'Édition',
-      submenu: [...commonItems, ...platformItems],
+      submenu: [
+        { role: 'copy' },
+        { role: 'paste' },
+      ],
     };
   }
 
