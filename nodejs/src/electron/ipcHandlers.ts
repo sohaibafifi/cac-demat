@@ -68,6 +68,18 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
+    this.ipcMain.handle('coordinator:set-zip-reviewers-enabled', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
+      const coordinator = this.getCoordinator();
+      coordinator.setZipReviewersEnabled(Boolean(enabled));
+      return serializeCoordinatorState(coordinator);
+    });
+
+    this.ipcMain.handle('coordinator:set-zip-members-enabled', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
+      const coordinator = this.getCoordinator();
+      coordinator.setZipMembersEnabled(Boolean(enabled));
+      return serializeCoordinatorState(coordinator);
+    });
+
     this.ipcMain.handle('coordinator:add-manual-reviewer', async (_event: IpcMainInvokeEvent, payload: { file: string; reviewers: string }) => {
       const coordinator = this.getCoordinator();
       coordinator.addManualReviewer(payload.file, payload.reviewers);

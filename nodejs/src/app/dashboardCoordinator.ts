@@ -73,6 +73,8 @@ export class DashboardCoordinator {
   status = 'En attente';
   running = false;
   cacName = '';
+  zipReviewersEnabled = true;
+  zipMembersEnabled = true;
   lastReviewerOutputDir: string | null = null;
   lastMemberOutputDir: string | null = null;
   lastRunMode: RunMode | null = null;
@@ -109,6 +111,18 @@ export class DashboardCoordinator {
   onProgress(listener: (progress: ProgressState) => void): () => void {
     this.progressListeners.add(listener);
     return () => this.progressListeners.delete(listener);
+  }
+
+  setZipReviewersEnabled(enabled: boolean): void {
+    this.zipReviewersEnabled = Boolean(enabled);
+    this.appendLog(this.zipReviewersEnabled ? 'ZIP rapporteurs activés.' : 'ZIP rapporteurs désactivés.');
+    this.emitChange();
+  }
+
+  setZipMembersEnabled(enabled: boolean): void {
+    this.zipMembersEnabled = Boolean(enabled);
+    this.appendLog(this.zipMembersEnabled ? 'ZIP membres activés.' : 'ZIP membres désactivés.');
+    this.emitChange();
   }
 
   private emitChange(): void {
@@ -420,6 +434,7 @@ export class DashboardCoordinator {
         (message: string) => this.appendLog(message),
         (update: PipelineProgress) => this.updateProgress(update, 'reviewers'),
         this.abortController.signal,
+        this.zipReviewersEnabled,
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -491,6 +506,7 @@ export class DashboardCoordinator {
         (message: string) => this.appendLog(message),
         (update: PipelineProgress) => this.updateProgress(update, 'members'),
         this.abortController.signal,
+        this.zipMembersEnabled,
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);

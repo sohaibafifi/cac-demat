@@ -1,4 +1,5 @@
 import { mkdir, realpath } from 'fs/promises';
+import path from 'path';
 import {
   PdfPackageProcessor,
   PdfPackage,
@@ -7,6 +8,8 @@ import {
   PreparationStats,
   PipelineProgress,
 } from '../pdf/pdfPackageProcessor.js';
+import { NameSanitizer } from '../../support/text/nameSanitizer.js';
+import { ZipService, ZipTarget } from '../zip/zipService.js';
 
 export interface MemberEntry {
   name: string;
@@ -14,17 +17,21 @@ export interface MemberEntry {
 }
 
 export class MemberPreparationService {
-  constructor(private readonly packageProcessor: PdfPackageProcessor) {}
+  constructor(
+    private readonly packageProcessor: PdfPackageProcessor,
+    private readonly zipService: ZipService,
+  ) {}
 
   async prepare(
     members: MemberEntry[],
     sourceDir: string,
     outputDir: string,
     collectionName: string,
-    logger?: PipelineLogger,
-    progress?: (progress: PipelineProgress) => void,
-    abortSignal?: AbortSignal,
-  ): Promise<PreparationStats> {
+  logger?: PipelineLogger,
+  progress?: (progress: PipelineProgress) => void,
+  abortSignal?: AbortSignal,
+  zipEnabled = true,
+): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
@@ -63,7 +70,11 @@ export class MemberPreparationService {
       };
     }
 
-    return this.packageProcessor.prepare(
+    const zipTargets = zipEnabled
+      ? this.buildZipTargets(packages, outputDir, collectionName)
+      : [];
+
+    const stats = await this.packageProcessor.prepare(
       packages,
       resolvedSourceDir,
       outputDir,
@@ -75,6 +86,12 @@ export class MemberPreparationService {
       progress,
       abortSignal,
     );
+
+    if (zipTargets.length > 0 && zipEnabled) {
+      await this.zipService.zipAll(zipTargets, { logger, abortSignal });
+    }
+
+    return stats;
   }
 
   private resolveRequestedFiles(
@@ -134,5 +151,28 @@ export class MemberPreparationService {
     }
 
     return [...new Set(resolved)];
+  }
+
+  private buildZipTargets(packages: PdfPackage[], outputDir: string, collectionName: string): ZipTarget[] {
+    const uniqueTargets = new Map<string, ZipTarget>();
+    const collectionLabel = NameSanitizer.sanitizeForFileName(collectionName, 'collection');
+    const collectionFolder = collectionName.trim()
+      ? NameSanitizer.sanitize(collectionName, 'collection')
+      : null;
+
+    for (const pkg of packages) {
+      const recipient = pkg.name.trim();
+      if (!recipient) continue;
+
+      const folderName = NameSanitizer.sanitize(recipient, 'member');
+      const recipientDir = path.join(outputDir, folderName);
+      const baseDir = collectionFolder ? path.join(recipientDir, collectionFolder) : recipientDir;
+      const zipName = `${collectionLabel} - ${NameSanitizer.sanitizeForFileName(recipient, 'destinataire')}.zip`;
+      const zipPath = path.join(recipientDir, zipName);
+
+      uniqueTargets.set(baseDir, { sourceDir: baseDir, zipPath, label: recipient });
+    }
+
+    return Array.from(uniqueTargets.values());
   }
 }

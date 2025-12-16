@@ -10,10 +10,12 @@ import { QpdfCommandResolver } from '../services/pdf/qpdfCommandResolver.js';
 import { PasswordGenerator } from '../support/security/passwordGenerator.js';
 import { DashboardCoordinator } from './dashboardCoordinator.js';
 import { WorkspaceService } from '../services/workspace/workspaceService.js';
+import { ZipService } from '../services/zip/zipService.js';
 
 export function createCoordinator(): DashboardCoordinator {
   const resolver = new QpdfCommandResolver();
   const passwordGenerator = new PasswordGenerator();
+  const zipService = new ZipService();
 
   const pipeline = new PdfProcessingPipeline([
     new CleanStage(resolver),
@@ -22,8 +24,8 @@ export function createCoordinator(): DashboardCoordinator {
   ]);
 
   const packageProcessor = new PdfPackageProcessor(pipeline);
-  const reviewerService = new ReviewerPreparationService(packageProcessor);
-  const memberService = new MemberPreparationService(packageProcessor);
+  const reviewerService = new ReviewerPreparationService(packageProcessor, zipService);
+  const memberService = new MemberPreparationService(packageProcessor, zipService);
   const csvLoader = new CsvAssignmentLoader();
   const workspace = new WorkspaceService();
 

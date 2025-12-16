@@ -18,6 +18,8 @@ export interface SerializedCoordinatorState {
   status: string;
   running: boolean;
   cacName: string;
+  zipReviewersEnabled: boolean;
+  zipMembersEnabled: boolean;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -93,6 +95,8 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
     status: coordinator.status,
     running: coordinator.running,
     cacName: coordinator.cacName,
+    zipReviewersEnabled: coordinator.zipReviewersEnabled,
+    zipMembersEnabled: coordinator.zipMembersEnabled,
     canRunReviewers: coordinator.getCanRunReviewers(),
     canRunMembers: coordinator.getCanRunMembers(),
     lastReviewerOutputDir: coordinator.lastReviewerOutputDir,

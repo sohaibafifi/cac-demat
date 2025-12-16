@@ -43,6 +43,8 @@ type CoordinatorState = {
   status: string;
   running: boolean;
   cacName: string;
+  zipReviewersEnabled: boolean;
+  zipMembersEnabled: boolean;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -129,6 +131,8 @@ const elements = {
   runMembers: document.getElementById('run-members') as HTMLButtonElement,
   stopPipeline: document.getElementById('stop-pipeline') as HTMLButtonElement,
   openFolder: document.getElementById('open-folder') as HTMLButtonElement,
+  zipReviewersToggle: document.getElementById('zip-reviewers-enabled') as HTMLInputElement,
+  zipMembersToggle: document.getElementById('zip-members-enabled') as HTMLInputElement,
   openReviewersCsv: document.getElementById('open-reviewers-csv') as HTMLButtonElement,
   openMembersCsv: document.getElementById('open-members-csv') as HTMLButtonElement,
   selectFolder: document.getElementById('select-folder') as HTMLButtonElement,
@@ -168,6 +172,8 @@ function setState(state: CoordinatorState): void {
     ...state,
     csvReviewers: [...(state.csvReviewers ?? [])],
     csvMembers: [...(state.csvMembers ?? [])],
+    zipReviewersEnabled: state.zipReviewersEnabled !== undefined ? Boolean(state.zipReviewersEnabled) : true,
+    zipMembersEnabled: state.zipMembersEnabled !== undefined ? Boolean(state.zipMembersEnabled) : true,
     progress: state.progress
       ? { ...state.progress }
       : {
@@ -333,6 +339,8 @@ function updateActionStates(): void {
     elements.selectFolder.disabled = true;
     elements.loadReviewersCsv.disabled = true;
     elements.loadMembersCsv.disabled = true;
+    elements.zipReviewersToggle.disabled = true;
+    elements.zipMembersToggle.disabled = true;
     elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
       (node as HTMLInputElement | HTMLButtonElement).disabled = true;
     });
@@ -356,6 +364,8 @@ function updateActionStates(): void {
   elements.selectFolder.disabled = busy;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
+  elements.zipReviewersToggle.disabled = busy || currentState.running;
+  elements.zipMembersToggle.disabled = busy || currentState.running;
   elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
     (node as HTMLInputElement | HTMLButtonElement).disabled = busy;
   });
@@ -404,6 +414,8 @@ function render(): void {
     elements.cacNameInput.value = currentState.cacName;
   }
 
+  elements.zipReviewersToggle.checked = Boolean(currentState.zipReviewersEnabled);
+  elements.zipMembersToggle.checked = Boolean(currentState.zipMembersEnabled);
   elements.logOutput.value = currentState.log ?? '';
   elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
   const reviewerOutput = currentState.lastReviewerOutputDir;
@@ -1044,6 +1056,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const value = (event.target as HTMLInputElement).value;
     await updateCoordinator(() => api.setCacName(value));
+  });
+
+  elements.zipReviewersToggle.addEventListener('change', async (event) => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    const enabled = (event.target as HTMLInputElement).checked;
+    await updateCoordinator(() => api.setZipReviewersEnabled(enabled));
+  });
+
+  elements.zipMembersToggle.addEventListener('change', async (event) => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    const enabled = (event.target as HTMLInputElement).checked;
+    await updateCoordinator(() => api.setZipMembersEnabled(enabled));
   });
 
   elements.selectFolder.addEventListener('click', async () => {
