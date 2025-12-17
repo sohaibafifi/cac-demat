@@ -4,6 +4,7 @@ import { ReviewerPreparationService } from '../services/pipeline/reviewerPrepara
 import { PdfPackageProcessor } from '../services/pdf/pdfPackageProcessor.js';
 import { PdfProcessingPipeline } from '../services/pipeline/pdfProcessingPipeline.js';
 import { CleanStage } from '../services/pipeline/stages/cleanStage.js';
+import { MetadataStage } from '../services/pipeline/stages/metadataStage.js';
 import { WatermarkStage } from '../services/pipeline/stages/watermarkStage.js';
 import { RestrictionStage } from '../services/pipeline/stages/restrictionStage.js';
 import { QpdfCommandResolver } from '../services/pdf/qpdfCommandResolver.js';
@@ -20,6 +21,7 @@ export function createCoordinator(): DashboardCoordinator {
   const pipeline = new PdfProcessingPipeline([
     new CleanStage(resolver),
     new WatermarkStage(resolver),
+    new MetadataStage(resolver),
     new RestrictionStage(resolver, passwordGenerator),
   ]);
 
