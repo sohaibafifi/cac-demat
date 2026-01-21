@@ -6,6 +6,41 @@ import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { runCommand } from '../../utils/process.js';
 
+/**
+ * Mutex for serializing LibreOffice conversions.
+ * LibreOffice cannot run multiple instances simultaneously (single user profile).
+ */
+class Mutex {
+  private queue: (() => void)[] = [];
+  private locked = false;
+
+  async acquire(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (!this.locked) {
+        this.locked = true;
+        resolve();
+      } else {
+        this.queue.push(resolve);
+      }
+    });
+  }
+
+  release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
+
+// Global mutex for LibreOffice - only one conversion at a time
+const sofficeMutex = new Mutex();
+
+// Global mutex for Word COM automation - only one conversion at a time
+const wordMutex = new Mutex();
+
 const fileExists = async (candidate: string): Promise<boolean> => {
   try {
     await access(candidate, fsConstants.F_OK);
@@ -137,6 +172,9 @@ export class DocxConverter {
       );
     }
 
+    // Acquire mutex - LibreOffice cannot run multiple instances simultaneously
+    await sofficeMutex.acquire();
+
     const tempDir = path.join(os.tmpdir(), `cac_demat_soffice_${randomUUID()}`);
     await mkdir(tempDir, { recursive: true });
 
@@ -171,6 +209,7 @@ export class DocxConverter {
       await rename(generatedPath, outputPath);
     } finally {
       await this.cleanupDir(tempDir);
+      sofficeMutex.release();
     }
   }
 
@@ -187,36 +226,44 @@ export class DocxConverter {
 
     await mkdir(path.dirname(absoluteOutput), { recursive: true });
 
-    const result = await runCommand(
-      'powershell.exe',
-      [
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        scriptPath,
-        '-inputPath',
-        absoluteInput,
-        '-outputPath',
-        absoluteOutput,
-      ],
-      { abortSignal, timeoutMs: 120000 },
-    );
+    // Acquire mutex - Word COM cannot run multiple instances simultaneously
+    await wordMutex.acquire();
 
-    if (result.exitCode !== 0) {
-      const error = result.stderr.trim() || result.stdout.trim() || 'erreur inconnue';
-      
-      // If Word failed, try LibreOffice as fallback
-      const soffice = await this.resolveSofficePath();
-      if (soffice) {
-        await this.convertWithSoffice(inputPath, outputPath, abortSignal);
-        return;
+    try {
+      const result = await runCommand(
+        'powershell.exe',
+        [
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          scriptPath,
+          '-inputPath',
+          absoluteInput,
+          '-outputPath',
+          absoluteOutput,
+        ],
+        { abortSignal, timeoutMs: 120000 },
+      );
+
+      if (result.exitCode !== 0) {
+        const error = result.stderr.trim() || result.stdout.trim() || 'erreur inconnue';
+        
+        // If Word failed, try LibreOffice as fallback (release Word mutex first)
+        const soffice = await this.resolveSofficePath();
+        if (soffice) {
+          wordMutex.release();
+          await this.convertWithSoffice(inputPath, outputPath, abortSignal);
+          return;
+        }
+        
+        throw new Error(`Échec de la conversion Word: ${error}`);
       }
-      
-      throw new Error(`Échec de la conversion Word: ${error}`);
-    }
 
-    if (!(await fileExists(absoluteOutput))) {
-      throw new Error('Le fichier PDF n\'a pas été généré.');
+      if (!(await fileExists(absoluteOutput))) {
+        throw new Error('Le fichier PDF n\'a pas été généré.');
+      }
+    } finally {
+      wordMutex.release();
     }
   }
 

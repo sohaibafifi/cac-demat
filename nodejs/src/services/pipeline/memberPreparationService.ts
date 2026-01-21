@@ -88,7 +88,7 @@ export class MemberPreparationService {
     );
 
     if (zipTargets.length > 0 && zipEnabled) {
-      await this.zipService.zipAll(zipTargets, { logger, abortSignal });
+      await this.zipService.zipAll(zipTargets, { logger, abortSignal, removeSource: true });
     }
 
     return stats;

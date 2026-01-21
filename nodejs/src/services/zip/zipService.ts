@@ -13,6 +13,7 @@ export interface ZipTarget {
 export interface ZipOptions {
   logger?: PipelineLogger;
   abortSignal?: AbortSignal;
+  removeSource?: boolean;
 }
 
 export class ZipService {
@@ -87,6 +88,19 @@ export class ZipService {
     }
 
     options.logger?.(`Archive générée pour ${label ?? folderName}: ${zipPath}`);
+
+    if (options.removeSource) {
+      // Only remove source if it's not the same directory as the zip file
+      const zipDir = path.dirname(zipPath);
+      const sourceDirResolved = path.resolve(sourceDir);
+      const zipDirResolved = path.resolve(zipDir);
+
+      if (sourceDirResolved !== zipDirResolved) {
+        await rm(sourceDir, { recursive: true, force: true });
+        options.logger?.(`Dossier source supprimé: ${sourceDir}`);
+      }
+    }
+
     return true;
   }
 
