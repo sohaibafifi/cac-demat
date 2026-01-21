@@ -4,6 +4,7 @@ import { ReviewerPreparationService, ReviewerPackage } from '../services/pipelin
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
 import type { PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
 import { isPipelineCancelledError, PipelineCancelledError } from '../services/pipeline/pipelineCancelledError.js';
+import { isSupportedFile } from '../services/pipeline/stages/docxConversionStage.js';
 import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
 
 export interface ManualReviewerAssignment {
@@ -297,7 +298,7 @@ export class DashboardCoordinator {
     this.reviewersManual.push({ file: trimmedFile, reviewers, source: 'manual' });
     this.appendLog(`Attribution manuelle ajoutée pour ${trimmedFile}.`);
 
-    if (trimmedFile.toLowerCase().endsWith('.pdf') && !this.availableFiles.includes(trimmedFile)) {
+    if (isSupportedFile(trimmedFile) && !this.availableFiles.includes(trimmedFile)) {
       this.availableFiles.push(trimmedFile);
       this.availableFiles.sort((a, b) => a.localeCompare(b));
     }
@@ -564,9 +565,9 @@ export class DashboardCoordinator {
     }
 
     const inventory = await this.workspace.inventory(this.folder);
-    this.availableFiles = inventory.files.filter((file) => file.toLowerCase().endsWith('.pdf'));
+    this.availableFiles = inventory.files.filter((file) => isSupportedFile(file));
     this.fileEntries = inventory.entries.filter(
-      (entry) => entry.type === 'file' && entry.name.toLowerCase().endsWith('.pdf'),
+      (entry) => entry.type === 'file' && isSupportedFile(entry.name),
     );
 
     await this.reloadCsvImports();

@@ -5,6 +5,15 @@ import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
 import { throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
+import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
+
+const toPdfBasename = (filename: string): string => {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === '.pdf') {
+    return filename;
+  }
+  return filename.slice(0, -ext.length) + '.pdf';
+};
 
 export interface PdfInventoryEntry {
   path: string;
@@ -178,7 +187,7 @@ export class PdfPackageProcessor {
           continue;
         }
 
-        if (dirent.isFile() && dirent.name.toLowerCase().endsWith('.pdf')) {
+        if (dirent.isFile() && isSupportedFile(dirent.name)) {
           const relative = path.relative(resolvedSourceDir, fullPath).split(path.sep).join('/');
           const relativeDir = path.dirname(relative) === '.' ? '' : path.dirname(relative).split(path.sep).join('/');
 
@@ -186,7 +195,7 @@ export class PdfPackageProcessor {
             path: fullPath,
             relative,
             relativeDir,
-            basename: path.basename(fullPath),
+            basename: toPdfBasename(path.basename(fullPath)),
           });
         }
       }

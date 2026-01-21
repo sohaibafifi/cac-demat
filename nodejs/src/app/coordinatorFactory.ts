@@ -3,6 +3,7 @@ import { MemberPreparationService } from '../services/pipeline/memberPreparation
 import { ReviewerPreparationService } from '../services/pipeline/reviewerPreparationService.js';
 import { PdfPackageProcessor } from '../services/pdf/pdfPackageProcessor.js';
 import { PdfProcessingPipeline } from '../services/pipeline/pdfProcessingPipeline.js';
+import { DocxConversionStage } from '../services/pipeline/stages/docxConversionStage.js';
 import { CleanStage } from '../services/pipeline/stages/cleanStage.js';
 import { MetadataStage } from '../services/pipeline/stages/metadataStage.js';
 import { WatermarkStage } from '../services/pipeline/stages/watermarkStage.js';
@@ -19,6 +20,7 @@ export function createCoordinator(): DashboardCoordinator {
   const zipService = new ZipService();
 
   const pipeline = new PdfProcessingPipeline([
+    new DocxConversionStage(),
     new CleanStage(resolver),
     new WatermarkStage(resolver),
     new MetadataStage(resolver),

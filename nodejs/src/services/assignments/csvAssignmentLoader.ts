@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import XLSX from 'xlsx';
 import { parseCsv, CsvTable } from '../../utils/csv.js';
+import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
 
 export interface ReviewerAssignment {
   file: string;
@@ -434,7 +435,7 @@ export class PdfFileMatcher {
 
   constructor(files: string[]) {
     this.candidates = files
-      .filter((file) => file.toLowerCase().endsWith('.pdf'))
+      .filter((file) => isSupportedFile(file))
       .map((file) => ({
         original: file,
         normalized: normalizeCandidateToken(path.basename(file, path.extname(file))),
