@@ -3,6 +3,7 @@ import { constants as fsConstants } from 'fs';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { fileURLToPath } from 'url';
 import { runCommand } from '../../utils/process.js';
 
 /**
@@ -134,6 +135,23 @@ const resolveSoffice = async (): Promise<string | null> => {
   return null;
 };
 
+const getScriptPath = (): string => {
+  const candidates: string[] = [];
+
+  if (typeof process.resourcesPath === 'string' && process.resourcesPath !== '') {
+    candidates.push(path.join(process.resourcesPath, 'resources', 'scripts'));
+    candidates.push(path.join(process.resourcesPath, 'scripts'));
+    candidates.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'resources', 'scripts'));
+  }
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  candidates.push(path.join(moduleDir, '..', '..', '..', 'resources', 'scripts'));
+  candidates.push(path.join(moduleDir, '..', '..', 'resources', 'scripts'));
+  candidates.push(path.join(process.cwd(), 'resources', 'scripts'));
+
+  return candidates[0] ?? path.join(process.cwd(), 'resources', 'scripts');
+};
+
 export class DocxConverter {
   private sofficePathCache: string | null = null;
   private sofficeChecked = false;
@@ -196,8 +214,12 @@ export class DocxConverter {
   }
 
   private async convertWithWord(inputPath: string, outputPath: string, abortSignal?: AbortSignal): Promise<void> {
-    const scriptPath = path.join(os.tmpdir(), 'cac_demat_convert_docx.ps1');
-    await this.createPowerShellScript(scriptPath);
+    const scriptPath = path.join(getScriptPath(), 'convert-docx.ps1');
+
+    // Ensure script exists
+    if (!(await fileExists(scriptPath))) {
+      await this.createPowerShellScript(scriptPath);
+    }
 
     const absoluteInput = path.resolve(inputPath);
     const absoluteOutput = path.resolve(outputPath);
@@ -206,7 +228,6 @@ export class DocxConverter {
 
     // Acquire mutex - Word COM cannot run multiple instances simultaneously
     await wordMutex.acquire();
-    let wordError: string | null = null;
 
     try {
       const result = await runCommand(
@@ -224,22 +245,26 @@ export class DocxConverter {
         { abortSignal, timeoutMs: 120000 },
       );
 
-      if (result.exitCode === 0 && (await fileExists(absoluteOutput))) {
-        return;
+      if (result.exitCode !== 0) {
+        const error = result.stderr.trim() || result.stdout.trim() || 'erreur inconnue';
+        
+        // If Word failed, try LibreOffice as fallback (release Word mutex first)
+        const soffice = await this.resolveSofficePath();
+        if (soffice) {
+          wordMutex.release();
+          await this.convertWithSoffice(inputPath, outputPath, abortSignal);
+          return;
+        }
+        
+        throw new Error(`Échec de la conversion Word: ${error}`);
       }
 
-      wordError = result.stderr.trim() || result.stdout.trim() || 'Le fichier PDF n\'a pas été généré.';
+      if (!(await fileExists(absoluteOutput))) {
+        throw new Error('Le fichier PDF n\'a pas été généré.');
+      }
     } finally {
       wordMutex.release();
     }
-
-    const soffice = await this.resolveSofficePath();
-    if (soffice) {
-      await this.convertWithSoffice(inputPath, outputPath, abortSignal);
-      return;
-    }
-
-    throw new Error(`Échec de la conversion Word: ${wordError ?? 'erreur inconnue'}`);
   }
 
   private async createPowerShellScript(scriptPath: string): Promise<void> {
@@ -254,48 +279,25 @@ if (-not (Test-Path $inputPath)) {
 }
 
 try {
-    $word = $null
-    $doc = $null
-
     $word = New-Object -ComObject Word.Application
     $word.Visible = $false
     $word.DisplayAlerts = 0
-
-    # Open read-only and export with fixed-format API to preserve interactive links reliably.
-    $doc = $word.Documents.Open($inputPath, [ref]$false, [ref]$true)
-    $doc.ExportAsFixedFormat(
-        $outputPath,  # OutputFileName
-        17,           # wdExportFormatPDF
-        $false,       # OpenAfterExport
-        0,            # wdExportOptimizeForPrint
-        0,            # wdExportAllDocument
-        1,            # From
-        1,            # To
-        0,            # wdExportDocumentContent
-        $true,        # IncludeDocProps
-        $true,        # KeepIRM
-        1,            # wdExportCreateHeadingBookmarks
-        $true,        # DocStructureTags
-        $true,        # BitmapMissingFonts
-        $false        # UseISO19005_1
-    )
-
+    
+    $doc = $word.Documents.Open($inputPath)
+    $doc.SaveAs([ref]$outputPath, [ref]17)  # 17 = wdFormatPDF
+    $doc.Close([ref]$false)
+    $word.Quit()
+    
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
+    
     Write-Host "Conversion completed: $inputPath -> $outputPath"
     exit 0
 } catch {
     Write-Error "Conversion failed: $_"
     exit 1
-} finally {
-    if ($doc -ne $null) {
-        $doc.Close([ref]$false)
-        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
-    }
-    if ($word -ne $null) {
-        $word.Quit()
-        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
-    }
-    [System.GC]::Collect()
-    [System.GC]::WaitForPendingFinalizers()
 }
 `;
 
