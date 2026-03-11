@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, unlink, writeFile } from 'fs/promises';
+import { readFile, stat, unlink, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -24,16 +24,16 @@ export class MetadataStage implements PdfProcessingStage {
     const qdfPath = await this.convertToQdf(context.workingPath, abortSignal);
 
     try {
-      const updatedQdf = await this.applyMetadataPolicy(qdfPath, context.recipient, abortSignal);
-      const rebuiltPath = await this.rebuildPdf(updatedQdf, abortSignal);
+      await this.applyMetadataPolicy(qdfPath, context.recipient, abortSignal);
 
       if (context.useDefaultLogging) {
         logger?.(`  → ${context.relativePath}: métadonnées nettoyées et sujet appliqué`);
       }
 
-      return context.withWorkingPath(rebuiltPath);
-    } finally {
+      return context.withWorkingPath(qdfPath);
+    } catch (error) {
       await unlink(qdfPath).catch(() => undefined);
+      throw error;
     }
   }
 
@@ -69,14 +69,13 @@ export class MetadataStage implements PdfProcessingStage {
     qdfPath: string,
     recipient: string,
     abortSignal?: AbortSignal,
-  ): Promise<string> {
+  ): Promise<void> {
     throwIfPipelineCancelled(abortSignal);
     const buffer = await readFile(qdfPath);
     const source = buffer.toString('latin1');
     const subject = this.buildSubject(recipient);
     const updated = this.injectInfoDictionary(source, subject);
     await writeFile(qdfPath, Buffer.from(updated, 'latin1'));
-    return qdfPath;
   }
 
   private buildSubject(recipient: string): string {
@@ -185,24 +184,6 @@ export class MetadataStage implements PdfProcessingStage {
 
     return maxId;
   }
-
-  private async rebuildPdf(qdfPath: string, abortSignal?: AbortSignal): Promise<string> {
-    const command = await this.commandResolver.resolve();
-    const outputPath = path.join(os.tmpdir(), `cac_demat_metadata_${randomUUID()}.pdf`);
-    await mkdir(path.dirname(outputPath), { recursive: true });
-
-    const result = await runCommand(command, ['--warning-exit-0', qdfPath, outputPath], { abortSignal });
-    const success = result.exitCode === 0 && (await this.fileExists(outputPath));
-
-    if (!success) {
-      await unlink(outputPath).catch(() => undefined);
-      const error = result.stderr.trim() || result.stdout.trim() || 'inconnue';
-      throw new Error(`Impossible de reconstruire le PDF sans métadonnées. Commande: ${command}. Erreur: ${error}`);
-    }
-
-    return outputPath;
-  }
-
   private async fileExists(pathname: string): Promise<boolean> {
     try {
       const stats = await stat(pathname);
