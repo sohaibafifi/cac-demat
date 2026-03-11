@@ -1,9 +1,9 @@
-import { mkdir, stat, unlink } from 'fs/promises';
+import { mkdir, unlink } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
-import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './contracts/pdfProcessingStage.js';
+import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingStage.js';
 import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
 import { DocxConverter } from '../../conversion/docxConverter.js';
 
@@ -20,18 +20,8 @@ const isSupportedFile = (filename: string): boolean => {
   return SUPPORTED_EXTENSIONS.includes(ext);
 };
 
-type ConversionCacheResult = {
-  path: string;
-};
-
-type ConversionCacheEntry = {
-  signature: string;
-  result: Promise<ConversionCacheResult>;
-};
-
-export class DocxConversionStage implements PdfProcessingStage, SharedResourceStage {
+export class DocxConversionStage implements PdfProcessingStage {
   private readonly converter = new DocxConverter();
-  private readonly cache = new Map<string, ConversionCacheEntry>();
 
   async process(
     context: PdfProcessingContext,
@@ -45,63 +35,13 @@ export class DocxConversionStage implements PdfProcessingStage, SharedResourceSt
       return context;
     }
 
-    const result = await this.getConvertedPdf(context.workingPath, abortSignal);
+    const pdfPath = await this.convertToPdf(context.workingPath, abortSignal);
 
     if (context.useDefaultLogging) {
       logger?.(`  → ${context.relativePath}: conversion DOCX → PDF effectuée`);
     }
 
-    return context.withWorkingPath(result.path, false);
-  }
-
-  async disposeSharedResources(): Promise<void> {
-    const entries = Array.from(this.cache.values());
-    this.cache.clear();
-
-    for (const entry of entries) {
-      try {
-        const result = await entry.result;
-        await this.disposeResult(result);
-      } catch {
-        // ignore cleanup failures for cached conversions
-      }
-    }
-  }
-
-  private async getConvertedPdf(sourcePath: string, abortSignal?: AbortSignal): Promise<ConversionCacheResult> {
-    throwIfPipelineCancelled(abortSignal);
-    const signature = await this.buildSignature(sourcePath);
-    const cached = this.cache.get(sourcePath);
-
-    if (cached && cached.signature === signature) {
-      return cached.result;
-    }
-
-    if (cached && cached.signature !== signature) {
-      void cached.result.then((result) => this.disposeResult(result)).catch(() => undefined);
-    }
-
-    const entry: ConversionCacheEntry = {
-      signature,
-      result: this.convertToPdf(sourcePath, abortSignal)
-        .then((path) => ({ path }))
-        .catch((error) => {
-          this.cache.delete(sourcePath);
-          throw error;
-        }),
-    };
-
-    this.cache.set(sourcePath, entry);
-    return entry.result;
-  }
-
-  private async buildSignature(pathname: string): Promise<string> {
-    const info = await stat(pathname);
-    return `${info.mtimeMs}-${info.size}`;
-  }
-
-  private async disposeResult(result: ConversionCacheResult): Promise<void> {
-    await unlink(result.path).catch(() => undefined);
+    return context.withWorkingPath(pdfPath);
   }
 
   private async convertToPdf(sourcePath: string, abortSignal?: AbortSignal): Promise<string> {
