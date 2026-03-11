@@ -27,6 +27,8 @@
     "publish": "electron-forge publish",
     "prune": "npm prune --production",
     "optimize": "node scripts/optimize-size.cjs",
+    "generate:test-fixture": "node scripts/generate-test-fixture.cjs",
+    "generate:perf-fixture": "node scripts/generate-test-fixture.cjs --profile performance --candidates 40 --members 20 --reviewers 20",
     "list-assets": "node scripts/list-release-assets.cjs",
     "version:patch": "node ../scripts/bump-version.cjs patch",
     "version:minor": "node ../scripts/bump-version.cjs minor",
