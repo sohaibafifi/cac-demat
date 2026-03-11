@@ -155,6 +155,7 @@ const getScriptPath = (): string => {
 export class DocxConverter {
   private sofficePathCache: string | null = null;
   private sofficeChecked = false;
+  private wordScriptPrepared = false;
 
   async convert(inputPath: string, outputPath: string, abortSignal?: AbortSignal): Promise<void> {
     if (process.platform === 'win32') {
@@ -215,11 +216,7 @@ export class DocxConverter {
 
   private async convertWithWord(inputPath: string, outputPath: string, abortSignal?: AbortSignal): Promise<void> {
     const scriptPath = path.join(getScriptPath(), 'convert-docx.ps1');
-
-    // Ensure script exists
-    if (!(await fileExists(scriptPath))) {
-      await this.createPowerShellScript(scriptPath);
-    }
+    await this.ensurePowerShellScript(scriptPath);
 
     const absoluteInput = path.resolve(inputPath);
     const absoluteOutput = path.resolve(outputPath);
@@ -228,6 +225,13 @@ export class DocxConverter {
 
     // Acquire mutex - Word COM cannot run multiple instances simultaneously
     await wordMutex.acquire();
+    let wordMutexReleased = false;
+    const releaseWordMutex = () => {
+      if (!wordMutexReleased) {
+        wordMutexReleased = true;
+        wordMutex.release();
+      }
+    };
 
     try {
       const result = await runCommand(
@@ -247,15 +251,15 @@ export class DocxConverter {
 
       if (result.exitCode !== 0) {
         const error = result.stderr.trim() || result.stdout.trim() || 'erreur inconnue';
-        
-        // If Word failed, try LibreOffice as fallback (release Word mutex first)
+
+        // If Word failed, try LibreOffice as fallback after releasing the Word mutex.
         const soffice = await this.resolveSofficePath();
         if (soffice) {
-          wordMutex.release();
+          releaseWordMutex();
           await this.convertWithSoffice(inputPath, outputPath, abortSignal);
           return;
         }
-        
+
         throw new Error(`Échec de la conversion Word: ${error}`);
       }
 
@@ -263,8 +267,17 @@ export class DocxConverter {
         throw new Error('Le fichier PDF n\'a pas été généré.');
       }
     } finally {
-      wordMutex.release();
+      releaseWordMutex();
     }
+  }
+
+  private async ensurePowerShellScript(scriptPath: string): Promise<void> {
+    if (this.wordScriptPrepared) {
+      return;
+    }
+
+    await this.createPowerShellScript(scriptPath);
+    this.wordScriptPrepared = true;
   }
 
   private async createPowerShellScript(scriptPath: string): Promise<void> {
@@ -273,32 +286,76 @@ export class DocxConverter {
     [string]$outputPath
 )
 
+$maxAttempts = 5
+$retryDelayMs = 750
+$word = $null
+$doc = $null
+
+function Release-ComObject($comObject) {
+    if ($null -ne $comObject) {
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($comObject) | Out-Null
+    }
+}
+
 if (-not (Test-Path $inputPath)) {
     Write-Error "Input file does not exist: $inputPath"
     exit 1
 }
 
-try {
-    $word = New-Object -ComObject Word.Application
-    $word.Visible = $false
-    $word.DisplayAlerts = 0
-    
-    $doc = $word.Documents.Open($inputPath)
-    $doc.SaveAs([ref]$outputPath, [ref]17)  # 17 = wdFormatPDF
-    $doc.Close([ref]$false)
-    $word.Quit()
-    
-    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
-    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
-    [System.GC]::Collect()
-    [System.GC]::WaitForPendingFinalizers()
-    
-    Write-Host "Conversion completed: $inputPath -> $outputPath"
-    exit 0
-} catch {
-    Write-Error "Conversion failed: $_"
-    exit 1
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    try {
+        $word = New-Object -ComObject Word.Application
+        $word.Visible = $false
+        $word.DisplayAlerts = 0
+
+        $doc = $word.Documents.Open($inputPath)
+        $doc.SaveAs([ref]$outputPath, [ref]17)  # 17 = wdFormatPDF
+        $doc.Close([ref]$false)
+        $word.Quit()
+        Release-ComObject $doc
+        Release-ComObject $word
+        $doc = $null
+        $word = $null
+
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+
+        Write-Host "Conversion completed: $inputPath -> $outputPath"
+        exit 0
+    } catch {
+        $message = $_.Exception.ToString()
+
+        if ($null -ne $doc) {
+            try {
+                $doc.Close([ref]$false)
+            } catch {}
+        }
+
+        if ($null -ne $word) {
+            try {
+                $word.Quit()
+            } catch {}
+        }
+
+        Release-ComObject $doc
+        Release-ComObject $word
+        $doc = $null
+        $word = $null
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+
+        if ($attempt -lt $maxAttempts -and ($message -match '0x80010001' -or $message -match 'RPC_E_CALL_REJECTED')) {
+            Start-Sleep -Milliseconds $retryDelayMs
+            continue
+        }
+
+        Write-Error "Conversion failed: $message"
+        exit 1
+    }
 }
+
+Write-Error "Conversion failed after $maxAttempts attempts."
+exit 1
 `;
 
     await mkdir(path.dirname(scriptPath), { recursive: true });
