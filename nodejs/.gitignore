@@ -30,6 +30,7 @@ npm-debug.log*
 # Temporary files
 *.tmp
 .cache/
+test-data/generated/
 # Optimize npm installations
 package-lock=false
 save-exact=true
