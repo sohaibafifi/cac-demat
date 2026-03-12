@@ -12,6 +12,12 @@ const escapePdfString = (value: string): string => {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 };
 
+type TrailerLocation = {
+  start: number;
+  end: number;
+  text: string;
+};
+
 export class MetadataStage implements PdfProcessingStage {
   constructor(private readonly commandResolver: QpdfCommandResolver) {}
 
@@ -106,13 +112,8 @@ export class MetadataStage implements PdfProcessingStage {
   }
 
   private injectInfoDictionary(source: string, subject: string): string {
-    const infoRefMatch = source.match(/\/Info\s+(\d+)\s+(\d+)\s+R/);
-    const trailerMatch = source.match(/trailer\s*<<[\s\S]*?>>/);
-    if (!trailerMatch) {
-      throw new Error('Impossible de localiser le trailer PDF pour mettre à jour les métadonnées.');
-    }
-
-    const trailer = trailerMatch[0];
+    const trailer = this.locateTrailer(source);
+    const infoRefMatch = trailer.text.match(/\/Info\s+(\d+)\s+(\d+)\s+R/);
     const maxObjectId = this.findMaxObjectId(source);
     let updated = source;
 
@@ -136,24 +137,18 @@ export class MetadataStage implements PdfProcessingStage {
     const newId = maxObjectId + 1;
     const dictionary = this.buildInfoDictionary(subject);
     const infoObject = `\n${newId} 0 obj\n${dictionary}\nendobj\n`;
-    const trailerIndex = updated.indexOf(trailer);
-
-    if (trailerIndex === -1) {
-      throw new Error('Impossible de préparer la section trailer pour mettre à jour les métadonnées.');
-    }
-
-    updated = `${updated.slice(0, trailerIndex)}${infoObject}${updated.slice(trailerIndex)}`;
-    return this.updateTrailer(updated, trailer, newId, 0, newId);
+    updated = `${updated.slice(0, trailer.start)}${infoObject}${updated.slice(trailer.start)}`;
+    return this.updateTrailer(updated, this.locateTrailer(updated), newId, 0, newId);
   }
 
   private updateTrailer(
     source: string,
-    trailer: string,
+    trailer: TrailerLocation,
     infoId: number,
     generation: number,
     maxObjectId: number,
   ): string {
-    let updatedTrailer = trailer;
+    let updatedTrailer = trailer.text;
     const infoPattern = /\/Info\s+\d+\s+\d+\s+R/;
 
     if (infoPattern.test(updatedTrailer)) {
@@ -168,7 +163,32 @@ export class MetadataStage implements PdfProcessingStage {
       return `/Size ${required}`;
     });
 
-    return source.replace(trailer, updatedTrailer);
+    return `${source.slice(0, trailer.start)}${updatedTrailer}${source.slice(trailer.end)}`;
+  }
+
+  private locateTrailer(source: string): TrailerLocation {
+    const trailerStart = source.lastIndexOf('trailer');
+    if (trailerStart === -1) {
+      throw new Error('Impossible de localiser le trailer PDF pour mettre à jour les métadonnées.');
+    }
+
+    const startxrefIndex = source.indexOf('startxref', trailerStart);
+    if (startxrefIndex === -1) {
+      throw new Error('Impossible de localiser la fin du trailer PDF.');
+    }
+
+    const trailerSection = source.slice(trailerStart, startxrefIndex);
+    const trailerMatch = trailerSection.match(/trailer\s*<<[\s\S]*>>\s*$/);
+    if (!trailerMatch) {
+      throw new Error('Impossible d’analyser le trailer PDF pour mettre à jour les métadonnées.');
+    }
+
+    const trailerText = trailerMatch[0];
+    return {
+      start: trailerStart,
+      end: trailerStart + trailerText.length,
+      text: trailerText,
+    };
   }
 
   private findMaxObjectId(source: string): number {
