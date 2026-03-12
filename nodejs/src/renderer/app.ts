@@ -616,8 +616,8 @@ function renderRunErrors(): void {
   }
 
   const runErrors = currentState.runErrors ?? [];
-  panel.style.display = runErrors.length > 0 ? '' : 'none';
-  output.textContent = runErrors.join('\n');
+  panel.style.display = runErrors.length > 0 ? 'block' : 'none';
+  output.textContent = runErrors.join('\n\n');
 }
 
 function populateAvailableFiles(): void {

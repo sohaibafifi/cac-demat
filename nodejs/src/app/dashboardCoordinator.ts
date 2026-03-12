@@ -517,8 +517,10 @@ export class DashboardCoordinator {
         this.status = 'Interrompu';
         this.appendLog('Pipeline interrompu par l’utilisateur.');
       } else {
+        const message = error instanceof Error ? error.message : String(error);
+        this.runErrors = [`Erreur générale • Préparation rapporteurs • ${message}`];
         this.status = 'Erreur';
-        this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+        this.appendLog(`Erreur: ${message}`);
       }
     } finally {
       this.stopProgress();
@@ -597,8 +599,10 @@ export class DashboardCoordinator {
         this.status = 'Interrompu';
         this.appendLog('Pipeline interrompu par l’utilisateur.');
       } else {
+        const message = error instanceof Error ? error.message : String(error);
+        this.runErrors = [`Erreur générale • Préparation membres • ${message}`];
         this.status = 'Erreur';
-        this.appendLog(`Erreur: ${error instanceof Error ? error.message : String(error)}`);
+        this.appendLog(`Erreur: ${message}`);
       }
     } finally {
       this.stopProgress();
