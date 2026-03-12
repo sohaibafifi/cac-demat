@@ -11,6 +11,7 @@ const api = {
   setMembersCsv: (filePath) => ipcRenderer.invoke('coordinator:set-members-csv', filePath),
   clearReviewersCsv: () => ipcRenderer.invoke('coordinator:clear-reviewers-csv'),
   clearMembersCsv: () => ipcRenderer.invoke('coordinator:clear-members-csv'),
+  resetSession: () => ipcRenderer.invoke('coordinator:reset-session'),
   setCacName: (name) => ipcRenderer.invoke('coordinator:set-cac-name', name),
   addManualReviewer: (payload) => ipcRenderer.invoke('coordinator:add-manual-reviewer', payload),
   removeManualReviewer: (index) => ipcRenderer.invoke('coordinator:remove-manual-reviewer', index),
