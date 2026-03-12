@@ -111,6 +111,9 @@ let busy = false;
 let assignmentTab: 'reviewers' | 'members' = 'reviewers';
 let advancedMode = false;
 let lastRunNotificationId: number | null = null;
+let progressStartedAt: number | null = null;
+let lastProgressElapsedMs: number | null = null;
+let progressTickerId: number | null = null;
 
 const elements = {
   folderPath: document.getElementById('folder-path') as HTMLElement,
@@ -171,6 +174,55 @@ function setBusy(value: boolean): void {
   updateActionStates();
 }
 
+function stopProgressTicker(): void {
+  if (progressTickerId !== null) {
+    window.clearInterval(progressTickerId);
+    progressTickerId = null;
+  }
+}
+
+function syncProgressClock(progress: PipelineProgressState): void {
+  if (progress.active && progress.total > 0) {
+    if (progressStartedAt === null) {
+      progressStartedAt = Date.now();
+      lastProgressElapsedMs = null;
+    }
+
+    if (progressTickerId === null) {
+      progressTickerId = window.setInterval(() => {
+        if (!currentState?.progress?.active) {
+          stopProgressTicker();
+          return;
+        }
+
+        renderProgress();
+      }, 1000);
+    }
+
+    return;
+  }
+
+  if (progressStartedAt !== null) {
+    lastProgressElapsedMs = Date.now() - progressStartedAt;
+  }
+
+  progressStartedAt = null;
+  stopProgressTicker();
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 function setState(state: CoordinatorState): void {
   const normalized = {
     ...state,
@@ -190,6 +242,7 @@ function setState(state: CoordinatorState): void {
           mode: null as PipelineProgressState['mode'],
         },
   };
+  syncProgressClock(normalized.progress);
   currentState = normalized;
   render();
   notifyCompletionIfNeeded(normalized);
@@ -209,6 +262,7 @@ function setProgressState(progress: PipelineProgressState): void {
     mode: progress.mode ?? null,
   };
 
+  syncProgressClock(normalized);
   currentState = { ...currentState, progress: normalized };
   renderProgress();
 }
@@ -501,11 +555,28 @@ function renderProgress(): void {
   const completed = Math.min(progress.completed || 0, total || progress.completed || 0);
   const percent = total > 0 ? Math.floor((completed / total) * 100) : 0;
   const modeLabel = progress.mode === 'reviewers' ? 'Rapporteurs' : progress.mode === 'members' ? 'Membres' : null;
+  const elapsedMs = progress.active
+    ? (progressStartedAt !== null ? Date.now() - progressStartedAt : 0)
+    : (lastProgressElapsedMs ?? 0);
 
   container.dataset.active = progress.active ? 'true' : 'false';
   container.dataset.mode = modeLabel ?? '';
   fill.style.width = `${Math.min(100, percent)}%`;
-  label.textContent = total > 0 ? `${percent}% (${completed}/${total})` : 'En attente';
+
+  if (total > 0) {
+    let etaLabel = 'ETA --:--';
+
+    if (completed > 0 && completed < total && elapsedMs > 0) {
+      const remainingMs = (elapsedMs / completed) * (total - completed);
+      etaLabel = `ETA ${formatDuration(remainingMs)}`;
+    } else if (completed >= total) {
+      etaLabel = 'ETA 00:00';
+    }
+
+    label.textContent = `${percent}% (${completed}/${total}) • ${formatDuration(elapsedMs)} • ${etaLabel}`;
+  } else {
+    label.textContent = 'En attente';
+  }
 
   const parts = [];
   if (modeLabel) parts.push(modeLabel);
