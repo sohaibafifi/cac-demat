@@ -2,7 +2,7 @@ import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment, PdfFileMatch
 import { MemberPreparationService, MemberEntry } from '../services/pipeline/memberPreparationService.js';
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
-import type { PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
+import type { PreparationIssue, PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
 import { isPipelineCancelledError, PipelineCancelledError } from '../services/pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../services/pipeline/stages/docxConversionStage.js';
 import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
@@ -45,6 +45,7 @@ export interface RunStats {
   recipients: number;
   files: number;
   missing: number;
+  errors: number;
   outputDir: string;
 }
 
@@ -71,6 +72,7 @@ export class DashboardCoordinator {
   missingReviewerNames: string[] = [];
   logMessages: string[] = ['Prêt.'];
   log = 'Prêt.';
+  runErrors: string[] = [];
   status = 'En attente';
   running = false;
   cacName = '';
@@ -448,18 +450,26 @@ export class DashboardCoordinator {
         recipients: stats.processedRecipients,
         files: stats.processedFiles,
         missing: stats.missingFiles.length,
+        errors: stats.errors.length,
         outputDir,
       };
 
       const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
       this.appendLog(`Statistiques: ${summary}`);
+      this.applyRunIssues(stats.errors);
 
       if (stats.missingFiles.length > 0) {
         this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
       }
 
-      this.status = 'Terminé';
-      this.appendLog('Pipeline terminé avec succès.');
+      if (stats.errors.length > 0) {
+        this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
+        this.status = 'Terminé avec erreurs';
+        this.appendLog('Pipeline terminé avec erreurs.');
+      } else {
+        this.status = 'Terminé';
+        this.appendLog('Pipeline terminé avec succès.');
+      }
     } catch (error) {
       if (isPipelineCancelledError(error)) {
         this.status = 'Interrompu';
@@ -520,18 +530,26 @@ export class DashboardCoordinator {
         recipients: stats.processedRecipients,
         files: stats.processedFiles,
         missing: stats.missingFiles.length,
+        errors: stats.errors.length,
         outputDir,
       };
 
       const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
       this.appendLog(`Statistiques: ${summary}`);
+      this.applyRunIssues(stats.errors);
 
       if (stats.missingFiles.length > 0) {
         this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
       }
 
-      this.status = 'Terminé';
-      this.appendLog('Pipeline terminé avec succès.');
+      if (stats.errors.length > 0) {
+        this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
+        this.status = 'Terminé avec erreurs';
+        this.appendLog('Pipeline terminé avec erreurs.');
+      } else {
+        this.status = 'Terminé';
+        this.appendLog('Pipeline terminé avec succès.');
+      }
     } catch (error) {
       if (isPipelineCancelledError(error)) {
         this.status = 'Interrompu';
@@ -765,12 +783,22 @@ export class DashboardCoordinator {
   private resetLog(): void {
     this.logMessages = [];
     this.log = '';
+    this.runErrors = [];
     this.emitChange();
   }
 
   private appendLog(message: string): void {
     this.logMessages.push(message);
     this.log = this.logMessages.join('\n');
+    this.emitChange();
+  }
+
+  private formatRunIssue(issue: PreparationIssue): string {
+    return `${issue.recipient} • ${issue.file} • ${issue.message}`;
+  }
+
+  private applyRunIssues(issues: PreparationIssue[]): void {
+    this.runErrors = issues.map((issue) => this.formatRunIssue(issue));
     this.emitChange();
   }
 

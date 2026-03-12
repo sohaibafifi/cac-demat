@@ -1,7 +1,7 @@
 import { mkdir, readdir, rename, rm } from 'fs/promises';
 import path from 'path';
 import { runCommand } from '../../utils/process.js';
-import { throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
+import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 import type { PipelineLogger } from '../pdf/pdfPackageProcessor.js';
 
 export interface ZipTarget {
@@ -16,12 +16,51 @@ export interface ZipOptions {
   removeSource?: boolean;
 }
 
+export interface ZipIssue {
+  label: string;
+  zipPath: string;
+  message: string;
+}
+
+export interface ZipBatchResult {
+  created: number;
+  skipped: number;
+  errors: ZipIssue[];
+}
+
 export class ZipService {
-  async zipAll(targets: ZipTarget[], options: ZipOptions = {}): Promise<void> {
+  async zipAll(targets: ZipTarget[], options: ZipOptions = {}): Promise<ZipBatchResult> {
+    const summary: ZipBatchResult = {
+      created: 0,
+      skipped: 0,
+      errors: [],
+    };
+
     for (const target of targets) {
       throwIfPipelineCancelled(options.abortSignal);
-      await this.zipDirectory(target, options);
+      try {
+        const created = await this.zipDirectory(target, options);
+        if (created) {
+          summary.created += 1;
+        } else {
+          summary.skipped += 1;
+        }
+      } catch (error) {
+        if (isPipelineCancelledError(error)) {
+          throw error;
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        summary.errors.push({
+          label: target.label ?? path.basename(target.sourceDir),
+          zipPath: target.zipPath,
+          message,
+        });
+        options.logger?.(`Erreur lors de la création de l'archive pour ${target.label ?? target.sourceDir}: ${message}`);
+      }
     }
+
+    return summary;
   }
 
   private async zipDirectory(target: ZipTarget, options: ZipOptions): Promise<boolean> {

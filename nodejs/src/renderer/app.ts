@@ -40,6 +40,7 @@ type CoordinatorState = {
   reviewerSummaries: ReviewerSummary[];
   combinedMembers: Array<{ name: string; files: string[] }>;
   log: string;
+  runErrors: string[];
   status: string;
   running: boolean;
   cacName: string;
@@ -57,6 +58,7 @@ type CoordinatorState = {
     recipients: number;
     files: number;
     missing: number;
+    errors: number;
     outputDir: string;
   } | null;
   progress: PipelineProgressState;
@@ -115,6 +117,8 @@ const elements = {
   reviewersCsvPath: document.getElementById('reviewers-csv-path') as HTMLElement,
   membersCsvPath: document.getElementById('members-csv-path') as HTMLElement,
   logOutput: document.getElementById('log-output') as HTMLTextAreaElement,
+  errorPanel: document.getElementById('error-panel') as HTMLElement,
+  errorOutput: document.getElementById('error-output') as HTMLElement,
   statusBadge: document.getElementById('status-badge') as HTMLElement,
   statusHint: document.getElementById('status-hint') as HTMLElement,
   missingFiles: document.getElementById('missing-files') as HTMLElement,
@@ -172,6 +176,7 @@ function setState(state: CoordinatorState): void {
     ...state,
     csvReviewers: [...(state.csvReviewers ?? [])],
     csvMembers: [...(state.csvMembers ?? [])],
+    runErrors: [...(state.runErrors ?? [])],
     zipReviewersEnabled: state.zipReviewersEnabled !== undefined ? Boolean(state.zipReviewersEnabled) : true,
     zipMembersEnabled: state.zipMembersEnabled !== undefined ? Boolean(state.zipMembersEnabled) : true,
     progress: state.progress
@@ -244,16 +249,19 @@ function buildCompletionMessage(stats: NonNullable<CoordinatorState['lastRunStat
   if (stats.missing > 0) {
     segments.push(`${stats.missing} fichier(s) introuvable(s) ignoré(s)`);
   }
+  if (stats.errors > 0) {
+    segments.push(`${stats.errors} erreur(s)`);
+  }
 
   return [
-    `Préparation ${modeLabel} terminée.`,
+    `Préparation ${modeLabel} ${stats.errors > 0 ? 'terminée avec erreurs' : 'terminée'}.`,
     segments.join(', '),
     `Dossier: ${stats.outputDir}`,
   ].join('\n');
 }
 
 function notifyCompletionIfNeeded(state: CoordinatorState): void {
-  if (state.status !== 'Terminé' || !state.lastRunStats) {
+  if (!state.lastRunStats || (state.status !== 'Terminé' && state.status !== 'Terminé avec erreurs')) {
     return;
   }
 
@@ -270,12 +278,13 @@ function notifyCompletionIfNeeded(state: CoordinatorState): void {
     if (api?.showMessageBox) {
       const [headline, ...rest] = message.split('\n');
       const detail = rest.join('\n').trim();
+      const hasErrors = lastRunStats.errors > 0;
       const options = {
-        type: 'info' as const,
+        type: hasErrors ? ('warning' as const) : ('info' as const),
         buttons: ['Fermer'],
         defaultId: 0,
         cancelId: 0,
-        title: 'Pipeline terminé',
+        title: hasErrors ? 'Pipeline terminé avec erreurs' : 'Pipeline terminé',
         message: headline,
         detail: detail === '' ? undefined : detail,
       };
@@ -418,6 +427,7 @@ function render(): void {
   elements.zipMembersToggle.checked = Boolean(currentState.zipMembersEnabled);
   elements.logOutput.value = currentState.log ?? '';
   elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+  renderRunErrors();
   const reviewerOutput = currentState.lastReviewerOutputDir;
   const memberOutput = currentState.lastMemberOutputDir;
   elements.openOutputReviewers.disabled = !reviewerOutput;
@@ -431,6 +441,9 @@ function render(): void {
   if (status === 'Terminé') {
     elements.statusBadge.style.background = 'rgba(34,197,94,0.18)';
     elements.statusBadge.style.color = '#166534';
+  } else if (status === 'Terminé avec erreurs') {
+    elements.statusBadge.style.background = 'rgba(245,158,11,0.20)';
+    elements.statusBadge.style.color = '#b45309';
   } else if (status === 'Interrompu' || status === 'Arrêt en cours') {
     elements.statusBadge.style.background = 'rgba(234,88,12,0.16)';
     elements.statusBadge.style.color = '#c2410c';
@@ -445,6 +458,8 @@ function render(): void {
   elements.statusHint.textContent =
     currentState.status === 'Terminé'
       ? 'Dernière exécution réussie.'
+      : currentState.status === 'Terminé avec erreurs'
+        ? 'Exécution terminée, avec erreurs partielles.'
       : currentState.status === 'Erreur'
         ? 'Consultez le journal pour plus de détails.'
         : currentState.status === 'Interrompu'
@@ -512,6 +527,23 @@ function renderProgress(): void {
   detail.textContent = parts.length > 0
     ? parts.join(' • ')
     : 'Pipeline en attente de tâches.';
+}
+
+function renderRunErrors(): void {
+  if (!currentState) {
+    return;
+  }
+
+  const panel = elements.errorPanel;
+  const output = elements.errorOutput;
+
+  if (!panel || !output) {
+    return;
+  }
+
+  const runErrors = currentState.runErrors ?? [];
+  panel.style.display = runErrors.length > 0 ? '' : 'none';
+  output.textContent = runErrors.join('\n');
 }
 
 function populateAvailableFiles(): void {

@@ -4,7 +4,7 @@ import os from 'os';
 import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
-import { throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
+import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
 
 const toPdfBasename = (filename: string): string => {
@@ -40,6 +40,13 @@ export interface PreparationStats {
   processedRecipients: number;
   processedFiles: number;
   missingFiles: string[];
+  errors: PreparationIssue[];
+}
+
+export interface PreparationIssue {
+  recipient: string;
+  file: string;
+  message: string;
 }
 
 export interface PipelineProgress {
@@ -77,6 +84,7 @@ export class PdfPackageProcessor {
       processedRecipients: 0,
       processedFiles: 0,
       missingFiles: [],
+      errors: [],
     };
     const missing = new Set<string>();
     const tasks: Array<() => Promise<void>> = [];
@@ -123,26 +131,40 @@ export class PdfPackageProcessor {
 
         tasks.push(async () => {
           throwIfCancelled();
-          await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-          const result = await this.pipeline.process(context, logger, abortSignal);
-          stats.processedFiles += 1;
+          try {
+            await mkdir(destinationDir, { recursive: true, mode: 0o755 });
+            const result = await this.pipeline.process(context, logger, abortSignal);
+            stats.processedFiles += 1;
 
-          const current = (processedByRecipient.get(name) ?? 0) + 1;
-          processedByRecipient.set(name, current);
+            const current = (processedByRecipient.get(name) ?? 0) + 1;
+            processedByRecipient.set(name, current);
 
-          if (afterFileProcessed) {
-            await afterFileProcessed(file, name, true, result.password);
-          } else if (!useDefaultLogging && result.password) {
-            logger?.(`Processed ${file.relative} for ${name} (owner password: ${result.password})`);
+            if (afterFileProcessed) {
+              await afterFileProcessed(file, name, true, result.password);
+            } else if (!useDefaultLogging && result.password) {
+              logger?.(`Processed ${file.relative} for ${name} (owner password: ${result.password})`);
+            }
+          } catch (error) {
+            if (isPipelineCancelledError(error)) {
+              throw error;
+            }
+
+            const message = error instanceof Error ? error.message : String(error);
+            stats.errors.push({
+              recipient: name,
+              file: file.relative,
+              message,
+            });
+            logger?.(`Erreur lors du traitement de ${file.relative} pour ${name}: ${message}`);
+          } finally {
+            completed += 1;
+            progress?.({
+              total: totalTasks,
+              completed,
+              currentFile: file.relative,
+              currentRecipient: name,
+            });
           }
-
-          completed += 1;
-          progress?.({
-            total: totalTasks,
-            completed,
-            currentFile: file.relative,
-            currentRecipient: name,
-          });
         });
       }
     }

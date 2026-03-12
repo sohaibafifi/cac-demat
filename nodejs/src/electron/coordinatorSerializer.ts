@@ -15,6 +15,7 @@ export interface SerializedCoordinatorState {
   reviewerSummaries: Array<any>;
   combinedMembers: Array<{ name: string; files: string[] }>;
   log: string;
+  runErrors: string[];
   status: string;
   running: boolean;
   cacName: string;
@@ -32,6 +33,7 @@ export interface SerializedCoordinatorState {
     recipients: number;
     files: number;
     missing: number;
+    errors: number;
     outputDir: string;
   } | null;
   progress: {
@@ -92,6 +94,7 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
       files: [...(entry.files ?? [])],
     })),
     log: coordinator.log,
+    runErrors: [...coordinator.runErrors],
     status: coordinator.status,
     running: coordinator.running,
     cacName: coordinator.cacName,
@@ -110,6 +113,7 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
           recipients: coordinator.lastRunStats.recipients,
           files: coordinator.lastRunStats.files,
           missing: coordinator.lastRunStats.missing,
+          errors: coordinator.lastRunStats.errors,
           outputDir: coordinator.lastRunStats.outputDir,
         }
       : null,

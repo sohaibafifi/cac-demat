@@ -50,6 +50,7 @@ export class ReviewerPreparationService {
         processedRecipients: 0,
         processedFiles: 0,
         missingFiles: [],
+        errors: [],
       };
     }
 
@@ -73,7 +74,14 @@ export class ReviewerPreparationService {
     );
 
     if (zipTargets.length > 0 && zipEnabled) {
-      await this.zipService.zipAll(zipTargets, { logger, abortSignal, removeSource: true });
+      const zipResult = await this.zipService.zipAll(zipTargets, { logger, abortSignal, removeSource: true });
+      for (const issue of zipResult.errors) {
+        stats.errors.push({
+          recipient: issue.label,
+          file: issue.zipPath,
+          message: issue.message,
+        });
+      }
     }
 
     return stats;
