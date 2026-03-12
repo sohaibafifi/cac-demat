@@ -8,15 +8,7 @@ import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { runCommand } from '../../../utils/process.js';
 import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
 
-const escapePdfString = (value: string): string => {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-};
-
-type TrailerLocation = {
-  start: number;
-  end: number;
-  text: string;
-};
+const REMOVED_INFO_FIELDS = new Set(['/Author', '/Producer', '/Title', '/Subject']);
 
 export class MetadataStage implements PdfProcessingStage {
   constructor(private readonly commandResolver: QpdfCommandResolver) {}
@@ -27,11 +19,10 @@ export class MetadataStage implements PdfProcessingStage {
     abortSignal?: AbortSignal,
   ): Promise<PdfProcessingContext> {
     throwIfPipelineCancelled(abortSignal);
-    const qdfPath = await this.convertToQdf(context.workingPath, abortSignal);
+    const jsonPath = await this.buildMetadataUpdateJson(context.workingPath, context.recipient, abortSignal);
 
     try {
-      const updatedQdf = await this.applyMetadataPolicy(qdfPath, context.recipient, abortSignal);
-      const rebuiltPath = await this.rebuildPdf(updatedQdf, abortSignal);
+      const rebuiltPath = await this.rebuildPdf(context.workingPath, jsonPath, abortSignal);
 
       if (context.useDefaultLogging) {
         logger?.(`  → ${context.relativePath}: métadonnées nettoyées et sujet appliqué`);
@@ -39,50 +30,42 @@ export class MetadataStage implements PdfProcessingStage {
 
       return context.withWorkingPath(rebuiltPath);
     } finally {
-      await unlink(qdfPath).catch(() => undefined);
+      await unlink(jsonPath).catch(() => undefined);
     }
   }
 
-  private async convertToQdf(sourcePath: string, abortSignal?: AbortSignal): Promise<string> {
+  private async buildMetadataUpdateJson(
+    sourcePath: string,
+    recipient: string,
+    abortSignal?: AbortSignal,
+  ): Promise<string> {
     const command = await this.commandResolver.resolve();
-    const qdfPath = path.join(os.tmpdir(), `cac_demat_meta_qdf_${randomUUID()}.pdf`);
+    const jsonPath = path.join(os.tmpdir(), `cac_demat_meta_${randomUUID()}.json`);
 
     const result = await runCommand(
       command,
       [
-        '--warning-exit-0',
-        '--stream-data=uncompress',
-        '--object-streams=disable',
-        '--remove-metadata',
-        '--qdf',
         sourcePath,
-        qdfPath,
+        '--json-output',
+        jsonPath,
       ],
       { abortSignal },
     );
 
-    const exists = result.exitCode === 0 && (await this.fileExists(qdfPath));
+    const exists = result.exitCode === 0 && (await this.fileExists(jsonPath));
     if (!exists) {
-      await unlink(qdfPath).catch(() => undefined);
+      await unlink(jsonPath).catch(() => undefined);
       const error = result.stderr.trim() || result.stdout.trim() || 'inconnue';
-      throw new Error(`Impossible de préparer le QDF pour nettoyer les métadonnées. Commande: ${command}. Erreur: ${error}`);
+      throw new Error(`Impossible de préparer la mise à jour JSON des métadonnées. Commande: ${command}. Erreur: ${error}`);
     }
 
-    return qdfPath;
-  }
-
-  private async applyMetadataPolicy(
-    qdfPath: string,
-    recipient: string,
-    abortSignal?: AbortSignal,
-  ): Promise<string> {
     throwIfPipelineCancelled(abortSignal);
-    const buffer = await readFile(qdfPath);
-    const source = buffer.toString('latin1');
+    const buffer = await readFile(jsonPath);
+    const source = JSON.parse(buffer.toString('utf8'));
     const subject = this.buildSubject(recipient);
     const updated = this.injectInfoDictionary(source, subject);
-    await writeFile(qdfPath, Buffer.from(updated, 'latin1'));
-    return qdfPath;
+    await writeFile(jsonPath, JSON.stringify(updated));
+    return jsonPath;
   }
 
   private buildSubject(recipient: string): string {
@@ -90,128 +73,51 @@ export class MetadataStage implements PdfProcessingStage {
     return `Shared with ${label}`;
   }
 
-  private buildInfoDictionary(subject: string, existingBody?: string): string {
-    const escapedSubject = escapePdfString(subject);
-    let preserved: string[] = [];
+  private injectInfoDictionary(source: any, subject: string): any {
+    const sections = Array.isArray(source?.qpdf) ? source.qpdf : null;
+    const header = sections?.[0];
+    const objects = sections?.[1];
+    const trailer = objects?.trailer?.value;
 
-    if (existingBody) {
-      const cleaned = existingBody.replace(/\/(Author|Producer|Title|Subject)\s+\((?:\\.|[^\\)])*\)\s*/gi, '');
-      preserved = cleaned
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
+    if (!header || !objects || !trailer || typeof trailer !== 'object') {
+      throw new Error('Impossible d’analyser la structure JSON qpdf des métadonnées.');
     }
 
-    const lines = ['<<'];
-    for (const line of preserved) {
-      lines.push(`  ${line}`);
-    }
-    lines.push(`  /Subject (${escapedSubject})`);
-    lines.push('>>');
-    return lines.join('\n');
-  }
-
-  private injectInfoDictionary(source: string, subject: string): string {
-    const trailer = this.locateTrailer(source);
-    const infoRefMatch = trailer.text.match(/\/Info\s+(\d+)\s+(\d+)\s+R/);
-    const maxObjectId = this.findMaxObjectId(source);
-    let updated = source;
-
-    if (infoRefMatch) {
-      const objectId = Number(infoRefMatch[1]);
-      const generation = Number(infoRefMatch[2]);
-      const objectPattern = new RegExp(
-        `(?:\\r?\\n|^)${objectId}\\s+${generation}\\s+obj\\s*<<(.*?)>>\\s*endobj`,
-        's',
-      );
-      const objectMatch = objectPattern.exec(updated);
-      if (!objectMatch) {
-        throw new Error('Impossible de localiser l\'objet Info dans le QDF.');
-      }
-      const dictionary = this.buildInfoDictionary(subject, objectMatch?.[1]);
-      updated = updated.replace(objectPattern, `\n${objectId} ${generation} obj\n${dictionary}\nendobj`);
-      updated = this.updateTrailer(updated, trailer, objectId, generation, maxObjectId);
-      return updated;
+    let infoRef = typeof trailer['/Info'] === 'string' ? trailer['/Info'] : null;
+    if (!infoRef) {
+      const maxObjectId = Number(header.maxobjectid || 0);
+      infoRef = `${maxObjectId + 1} 0 R`;
+      trailer['/Info'] = infoRef;
     }
 
-    const newId = maxObjectId + 1;
-    const dictionary = this.buildInfoDictionary(subject);
-    const infoObject = `\n${newId} 0 obj\n${dictionary}\nendobj\n`;
-    updated = `${updated.slice(0, trailer.start)}${infoObject}${updated.slice(trailer.start)}`;
-    return this.updateTrailer(updated, this.locateTrailer(updated), newId, 0, newId);
-  }
+    const objectKey = `obj:${infoRef}`;
+    const existingValue = objects?.[objectKey]?.value;
+    const cleanedInfo: Record<string, unknown> = {};
 
-  private updateTrailer(
-    source: string,
-    trailer: TrailerLocation,
-    infoId: number,
-    generation: number,
-    maxObjectId: number,
-  ): string {
-    let updatedTrailer = trailer.text;
-    const infoPattern = /\/Info\s+\d+\s+\d+\s+R/;
-
-    if (infoPattern.test(updatedTrailer)) {
-      updatedTrailer = updatedTrailer.replace(infoPattern, `/Info ${infoId} ${generation} R`);
-    } else {
-      updatedTrailer = updatedTrailer.replace(/<<\s*/, (match) => `${match}/Info ${infoId} ${generation} R `);
-    }
-
-    updatedTrailer = updatedTrailer.replace(/\/Size\s+(\d+)/, (_match, value) => {
-      const current = Number(value);
-      const required = Math.max(current, maxObjectId + 1, infoId + 1);
-      return `/Size ${required}`;
-    });
-
-    return `${source.slice(0, trailer.start)}${updatedTrailer}${source.slice(trailer.end)}`;
-  }
-
-  private locateTrailer(source: string): TrailerLocation {
-    const trailerStart = source.lastIndexOf('trailer');
-    if (trailerStart === -1) {
-      throw new Error('Impossible de localiser le trailer PDF pour mettre à jour les métadonnées.');
-    }
-
-    const startxrefIndex = source.indexOf('startxref', trailerStart);
-    if (startxrefIndex === -1) {
-      throw new Error('Impossible de localiser la fin du trailer PDF.');
-    }
-
-    const trailerSection = source.slice(trailerStart, startxrefIndex);
-    const trailerMatch = trailerSection.match(/trailer\s*<<[\s\S]*>>\s*$/);
-    if (!trailerMatch) {
-      throw new Error('Impossible d’analyser le trailer PDF pour mettre à jour les métadonnées.');
-    }
-
-    const trailerText = trailerMatch[0];
-    return {
-      start: trailerStart,
-      end: trailerStart + trailerText.length,
-      text: trailerText,
-    };
-  }
-
-  private findMaxObjectId(source: string): number {
-    let maxId = 0;
-    const regex = /(?:^|\n)(\d+)\s+\d+\s+obj/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(source)) !== null) {
-      const id = Number(match[1]);
-      if (id > maxId) {
-        maxId = id;
+    if (existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue)) {
+      for (const [key, value] of Object.entries(existingValue)) {
+        if (!REMOVED_INFO_FIELDS.has(key)) {
+          cleanedInfo[key] = value;
+        }
       }
     }
 
-    return maxId;
+    cleanedInfo['/Subject'] = `u:${subject}`;
+    objects[objectKey] = { value: cleanedInfo };
+
+    return source;
   }
 
-  private async rebuildPdf(qdfPath: string, abortSignal?: AbortSignal): Promise<string> {
+  private async rebuildPdf(sourcePath: string, jsonPath: string, abortSignal?: AbortSignal): Promise<string> {
     const command = await this.commandResolver.resolve();
     const outputPath = path.join(os.tmpdir(), `cac_demat_metadata_${randomUUID()}.pdf`);
     await mkdir(path.dirname(outputPath), { recursive: true });
 
-    const result = await runCommand(command, ['--warning-exit-0', qdfPath, outputPath], { abortSignal });
+    const result = await runCommand(
+      command,
+      ['--warning-exit-0', '--remove-metadata', sourcePath, outputPath, `--update-from-json=${jsonPath}`],
+      { abortSignal },
+    );
     const success = result.exitCode === 0 && (await this.fileExists(outputPath));
 
     if (!success) {
