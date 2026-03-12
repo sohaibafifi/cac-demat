@@ -222,6 +222,48 @@ export class DashboardCoordinator {
     this.appendLog(`Dossier sélectionné: ${folder}`);
   }
 
+  resetSession(): void {
+    if (this.running) {
+      return;
+    }
+
+    this.folder = null;
+    this.csvReviewers = [];
+    this.csvMembers = [];
+    this.availableFiles = [];
+    this.reviewersFromCsv = [];
+    this.reviewersManual = [];
+    this.membersFromCsv = [];
+    this.membersManual = [];
+    this.fileEntries = [];
+    this.missingReviewerFiles = [];
+    this.missingReviewerNames = [];
+    this.cacName = '';
+    this.zipReviewersEnabled = true;
+    this.zipMembersEnabled = true;
+    this.lastReviewerOutputDir = null;
+    this.lastMemberOutputDir = null;
+    this.lastRunMode = null;
+    this.lastRunStats = null;
+    this.runErrors = [];
+    this.status = 'En attente';
+    this.stopRequested = false;
+    this.reviewerImports.clear();
+    this.memberImports.clear();
+    this.progress = {
+      active: false,
+      total: 0,
+      completed: 0,
+      currentFile: null,
+      currentRecipient: null,
+      mode: null,
+    };
+    this.logMessages = ['Prêt.'];
+    this.log = 'Prêt.';
+    this.emitProgress();
+    this.emitChange();
+  }
+
   async loadReviewersCsv(path: string): Promise<void> {
     const normalized = path.trim();
     if (!normalized) {

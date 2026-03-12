@@ -62,6 +62,12 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
+    this.ipcMain.handle('coordinator:reset-session', async () => {
+      const coordinator = this.getCoordinator();
+      coordinator.resetSession();
+      return serializeCoordinatorState(coordinator);
+    });
+
     this.ipcMain.handle('coordinator:set-cac-name', async (_event: IpcMainInvokeEvent, cacName: string) => {
       const coordinator = this.getCoordinator();
       coordinator.cacName = cacName;

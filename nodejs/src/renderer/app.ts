@@ -143,6 +143,7 @@ const elements = {
   openReviewersCsv: document.getElementById('open-reviewers-csv') as HTMLButtonElement,
   openMembersCsv: document.getElementById('open-members-csv') as HTMLButtonElement,
   selectFolder: document.getElementById('select-folder') as HTMLButtonElement,
+  resetSession: document.getElementById('reset-session') as HTMLButtonElement,
   loadReviewersCsv: document.getElementById('load-reviewers-csv') as HTMLButtonElement,
   resetReviewersCsv: document.getElementById('reset-reviewers-csv') as HTMLButtonElement,
   loadMembersCsv: document.getElementById('load-members-csv') as HTMLButtonElement,
@@ -400,6 +401,7 @@ function updateActionStates(): void {
     elements.resetReviewersCsv.disabled = true;
     elements.resetMembersCsv.disabled = true;
     elements.selectFolder.disabled = true;
+    elements.resetSession.disabled = true;
     elements.loadReviewersCsv.disabled = true;
     elements.loadMembersCsv.disabled = true;
     elements.zipReviewersToggle.disabled = true;
@@ -425,6 +427,7 @@ function updateActionStates(): void {
   elements.openMembersCsv.disabled = busy || !hasMemberCsv;
   elements.resetMembersCsv.disabled = busy || !hasMemberCsv;
   elements.selectFolder.disabled = busy;
+  elements.resetSession.disabled = busy || currentState.running;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
   elements.zipReviewersToggle.disabled = busy || currentState.running;
@@ -1193,6 +1196,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await updateCoordinator(() => api.setFolder(selected));
+  });
+
+  elements.resetSession.addEventListener('click', async () => {
+    const api = await getElectronApiOrWarn();
+    if (!api) {
+      return;
+    }
+
+    const shouldReset = confirm(
+      'Réinitialiser complètement la session ?\n\nCela effacera le dossier sélectionné, les imports CSV, les attributions manuelles, le nom du CAC, les statistiques et le journal.',
+    );
+    if (!shouldReset) {
+      return;
+    }
+
+    await updateCoordinator(() => api.resetSession());
   });
 
   elements.openFolder.addEventListener('click', async () => {
