@@ -1,16 +1,3 @@
-/nativephp/.phpunit.cache
-/nativephp/node_modules
-/nativephp/public/build
-/nativephp/public/hot
-/nativephp/public/storage
-/nativephp/storage/*.key
-/nativephp/storage/pail
-/nativephp/vendor
-/nativephp/.env
-/nativephp/.env.backup
-/nativephp/.env.production
-/nativephp/.phpactor.json
-/nativephp/.phpunit.result.cache
 Homestead.json
 Homestead.yaml
 npm-debug.log
@@ -21,9 +8,6 @@ yarn-error.log
 /.nova
 .vscode
 /.zed
-# NativePHP output directories moved under nativephp/
-/nativephp/data
-/nativephp/dist
 
 # Node.js workspace artefacts
 /nodejs/node_modules

@@ -268,8 +268,6 @@ export default async function start(electron: ElectronModule): Promise<void> {
       path.join(process.resourcesPath ?? '', 'dist', 'assets', fileName),
       // Fallback to local build directory when running unpackaged
       path.join(currentDir, '..', '..', 'build', fileName),
-      // Final fallback to NativePHP public icon if present
-      path.join(currentDir, '..', '..', '..', 'nativephp', 'public', 'icon.png'),
     ];
 
     for (const candidate of candidates) {

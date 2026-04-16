@@ -11,11 +11,9 @@ const bundledResourcesDst = path.join(projectRoot, 'dist', 'resources');
 const commandSourceCandidates = [
   path.join(projectRoot, 'commands'),
   path.join(projectRoot, 'resources', 'commands'),
-  path.join(projectRoot, '..', 'nativephp', 'resources', 'commands'),
 ];
 const iconSourceDirs = [
   path.join(projectRoot, 'build'),
-  path.join(projectRoot, '..', 'nativephp', 'public'),
 ];
 const iconFiles = ['icon.png', 'icon.ico', 'icon.icns'];
 const iconDstDir = path.join(projectRoot, 'dist', 'assets');

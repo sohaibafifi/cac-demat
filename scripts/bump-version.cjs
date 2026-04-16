@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Synchronise la version entre nodejs (Electron) et nativephp.
+ * Met à jour la version NodeJS/Electron.
  * Utilisation :
  *   node scripts/bump-version.cjs patch|minor|major
  *   node scripts/bump-version.cjs 1.2.3
@@ -13,7 +13,6 @@ const { execSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
 const nodeDir = path.join(repoRoot, 'nodejs');
-const nativeDir = path.join(repoRoot, 'nativephp');
 
 function exec(command, cwd) {
   return execSync(command, { stdio: 'inherit', cwd });
@@ -38,67 +37,20 @@ function bumpNodeVersion(target) {
   return readNodeVersion();
 }
 
-function updateEnvVersion(filePath, version) {
-  if (!fs.existsSync(filePath)) {
-    return false;
-  }
-
-  const content = fs.readFileSync(filePath, 'utf8');
-  const regex = /^NATIVEPHP_APP_VERSION=.*$/m;
-  const replacement = `NATIVEPHP_APP_VERSION=${version}`;
-  let updated;
-
-  if (regex.test(content)) {
-    updated = content.replace(regex, replacement);
-  } else {
-    updated = `${content.trim()}\n${replacement}\n`;
-  }
-
-  fs.writeFileSync(filePath, updated);
-  return true;
-}
-
-function updateNativePackage(version) {
-  const pkgPath = path.join(nativeDir, 'package.json');
-  if (!fs.existsSync(pkgPath)) {
-    return false;
-  }
-
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  pkg.version = version;
-  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 4)}\n`);
-  return true;
-}
-
 function main() {
   const target = (process.argv[2] || 'patch').toLowerCase();
 
-  console.log('🚀 Synchronisation de version (NodeJS ↔ NativePHP)\n');
+  console.log('🚀 Mise à jour de version NodeJS/Electron\n');
   const newVersion = bumpNodeVersion(target);
 
   console.log(`📦 Nouvelle version: ${newVersion}`);
 
-  const envExample = path.join(nativeDir, '.env.example');
-  const envLocal = path.join(nativeDir, '.env');
-
-  const touched = [];
-  if (updateEnvVersion(envExample, newVersion)) {
-    touched.push('.env.example');
-  }
-  if (updateEnvVersion(envLocal, newVersion)) {
-    touched.push('.env');
-  }
-  if (updateNativePackage(newVersion)) {
-    touched.push('package.json (nativephp)');
-  }
-
   console.log('\n📝 Fichiers mis à jour :');
   console.log(`  - nodejs/package.json + package-lock.json`);
-  touched.forEach(file => console.log(`  - nativephp/${file}`));
 
   console.log('\nÉtapes suivantes :');
   console.log('  1. Vérifier les changements git');
-  console.log('  2. Lancer npm run release (root) ou un release ciblé');
+  console.log('  2. Lancer npm run release');
   console.log('');
 }
 
