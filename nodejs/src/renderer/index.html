@@ -483,6 +483,67 @@
         color: var(--muted);
       }
 
+      .stage-selector {
+        display: grid;
+        gap: 0.6rem;
+        padding: 0.75rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.78);
+      }
+
+      .stage-selector-head {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .stage-selector-head strong {
+        font-size: 0.92rem;
+      }
+
+      .stage-selector-head small,
+      .stage-option-copy small {
+        color: var(--muted);
+      }
+
+      .stage-options {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.45rem;
+      }
+
+      .stage-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.55rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 10px;
+        background: rgba(255,255,255,0.9);
+      }
+
+      .stage-option input[type="checkbox"] {
+        width: 17px;
+        height: 17px;
+        margin-top: 0.1rem;
+        accent-color: var(--accent);
+      }
+
+      .stage-option-copy {
+        display: grid;
+        gap: 0.12rem;
+        min-width: 0;
+      }
+
+      .stage-option-copy strong {
+        font-size: 0.84rem;
+      }
+
+      .stage-option-copy small {
+        font-size: 0.76rem;
+        line-height: 1.35;
+      }
+
       .consultation { display: flex; flex-direction: column; gap: 0.5rem; }
 
       footer {
@@ -627,6 +688,13 @@ Martin,Marie,Prenom3 Nom3,Prenom4 Nom4</pre>
                 </div>
               </label>
             </div>
+            <div class="stage-selector">
+              <div class="stage-selector-head">
+                <strong>Étapes actives rapporteurs</strong>
+                <small>La conversion des documents en PDF reste automatique.</small>
+              </div>
+              <div id="reviewer-stage-options" class="stage-options"></div>
+            </div>
 
           <div class="consultation advanced-only">
             <strong>Consultation</strong>
@@ -722,6 +790,13 @@ Marie Martin;.;*.pdf</pre>
                     <small>Créer une archive par membre (Nom du CAC - Nom.zip)</small>
                   </div>
                 </label>
+              </div>
+              <div class="stage-selector">
+                <div class="stage-selector-head">
+                  <strong>Étapes actives membres</strong>
+                  <small>La conversion des documents en PDF reste automatique.</small>
+                </div>
+                <div id="member-stage-options" class="stage-options"></div>
               </div>
 
 

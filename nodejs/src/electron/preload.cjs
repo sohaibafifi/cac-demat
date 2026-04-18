@@ -20,6 +20,7 @@ const api = {
   setManualMemberFiles: (payload) => ipcRenderer.invoke('coordinator:set-manual-member-files', payload),
   setZipReviewersEnabled: (enabled) => ipcRenderer.invoke('coordinator:set-zip-reviewers-enabled', enabled),
   setZipMembersEnabled: (enabled) => ipcRenderer.invoke('coordinator:set-zip-members-enabled', enabled),
+  setPipelineStageEnabled: (payload) => ipcRenderer.invoke('coordinator:set-stage-enabled', payload),
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop'),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),

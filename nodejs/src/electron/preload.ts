@@ -29,6 +29,8 @@ const api = {
     ipcRenderer.invoke('coordinator:set-manual-member-files', payload) as Promise<any>,
   setZipReviewersEnabled: (enabled: boolean) => ipcRenderer.invoke('coordinator:set-zip-reviewers-enabled', enabled) as Promise<any>,
   setZipMembersEnabled: (enabled: boolean) => ipcRenderer.invoke('coordinator:set-zip-members-enabled', enabled) as Promise<any>,
+  setPipelineStageEnabled: (payload: { mode: 'reviewers' | 'members'; stageId: string; enabled: boolean }) =>
+    ipcRenderer.invoke('coordinator:set-stage-enabled', payload) as Promise<any>,
   runPipeline: (mode: 'reviewers' | 'members') =>
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop') as Promise<any>,

@@ -10,6 +10,7 @@ import {
 } from '../pdf/pdfPackageProcessor.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { ZipService, ZipTarget } from '../zip/zipService.js';
+import type { PipelineStageId } from './pipelineStages.js';
 
 export interface MemberEntry {
   name: string;
@@ -27,11 +28,12 @@ export class MemberPreparationService {
     sourceDir: string,
     outputDir: string,
     collectionName: string,
-  logger?: PipelineLogger,
-  progress?: (progress: PipelineProgress) => void,
-  abortSignal?: AbortSignal,
-  zipEnabled = true,
-): Promise<PreparationStats> {
+    logger?: PipelineLogger,
+    progress?: (progress: PipelineProgress) => void,
+    abortSignal?: AbortSignal,
+    zipEnabled = true,
+    activeStages?: readonly PipelineStageId[],
+  ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
@@ -86,6 +88,7 @@ export class MemberPreparationService {
       undefined,
       progress,
       abortSignal,
+      activeStages,
     );
 
     if (zipTargets.length > 0 && zipEnabled) {

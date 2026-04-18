@@ -86,6 +86,18 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
+    this.ipcMain.handle(
+      'coordinator:set-stage-enabled',
+      async (
+        _event: IpcMainInvokeEvent,
+        payload: { mode: string; stageId: string; enabled: boolean },
+      ) => {
+        const coordinator = this.getCoordinator();
+        coordinator.setPipelineStageEnabled(payload.mode, payload.stageId, Boolean(payload.enabled));
+        return serializeCoordinatorState(coordinator);
+      },
+    );
+
     this.ipcMain.handle('coordinator:add-manual-reviewer', async (_event: IpcMainInvokeEvent, payload: { file: string; reviewers: string }) => {
       const coordinator = this.getCoordinator();
       coordinator.addManualReviewer(payload.file, payload.reviewers);

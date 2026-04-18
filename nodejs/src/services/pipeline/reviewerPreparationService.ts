@@ -10,6 +10,7 @@ import {
 } from '../pdf/pdfPackageProcessor.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { ZipService, ZipTarget } from '../zip/zipService.js';
+import type { PipelineStageId } from './pipelineStages.js';
 
 export interface ReviewerPackage {
   name: string;
@@ -31,6 +32,7 @@ export class ReviewerPreparationService {
     progress?: (progress: PipelineProgress) => void,
     abortSignal?: AbortSignal,
     zipEnabled = true,
+    activeStages?: readonly PipelineStageId[],
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
@@ -66,11 +68,16 @@ export class ReviewerPreparationService {
       collectionName,
       logger,
       inventory,
-      async (file: PdfInventoryEntry, recipient: string, _restricted: boolean, password: string | null) => {
-        logger?.((`Processed ${file.relative} for ${recipient} (owner password: ${password || ''})`));
+      async (file: PdfInventoryEntry, recipient: string, restricted: boolean, password: string | null) => {
+        if (restricted) {
+          logger?.((`Processed ${file.relative} for ${recipient} (owner password: ${password || ''})`));
+        } else {
+          logger?.((`Processed ${file.relative} for ${recipient} (sans restriction PDF)`));
+        }
       },
       progress,
       abortSignal,
+      activeStages,
     );
 
     if (zipTargets.length > 0 && zipEnabled) {

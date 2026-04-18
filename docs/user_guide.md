@@ -71,10 +71,15 @@ Pour corriger un oubli ou gérer un cas spécifique :
 
 Une fois les attributions configurées :
 
-1.  Cliquez sur le bouton bleu **"🚀 Lancer le pipeline rapporteurs"**.
-2.  Une barre de progression (ou un indicateur d'état) s'affiche.
-3.  À la fin, un message vous confirme le nombre de dossiers générés.
-4.  Cliquez sur **"Ouvrir le dossier de sortie"** pour vérifier le résultat.
+1.  Vérifiez les **Étapes actives rapporteurs**.
+    *   **Nettoyage** : retire les informations sensibles détectées.
+    *   **Filigrane** : ajoute le nom du rapporteur sur chaque page.
+    *   **Métadonnées** : nettoie les propriétés PDF.
+    *   **Restrictions PDF** : bloque impression, extraction et modification.
+2.  Cliquez sur le bouton bleu **"🚀 Lancer le pipeline rapporteurs"**.
+3.  Une barre de progression (ou un indicateur d'état) s'affiche.
+4.  À la fin, un message vous confirme le nombre de dossiers générés.
+5.  Cliquez sur **"Ouvrir le dossier de sortie"** pour vérifier le résultat.
 
 ---
 
@@ -107,7 +112,9 @@ Permet de distribuer des lots de dossiers à des membres.
 
 ## Lancement du Pipeline (Membres)
 
-Cliquez sur **"🛡️ Lancer le pipeline membres"**. L'application créera un dossier par membre contenant les fichiers demandés.
+Vérifiez les **Étapes actives membres**, puis cliquez sur **"🛡️ Lancer le pipeline membres"**. L'application créera un dossier par membre contenant les fichiers demandés.
+
+La conversion des documents Word/ODT/RTF en PDF reste automatique pour les deux pipelines, même si toutes les étapes optionnelles sont désactivées.
 
 ---
 

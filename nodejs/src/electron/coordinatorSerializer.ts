@@ -1,4 +1,5 @@
 import type { DashboardCoordinator } from '../app/dashboardCoordinator.js';
+import type { PipelineStageDefinition, PipelineStageSelection } from '../services/pipeline/pipelineStages.js';
 
 export interface SerializedCoordinatorState {
   folder: string | null;
@@ -21,6 +22,9 @@ export interface SerializedCoordinatorState {
   cacName: string;
   zipReviewersEnabled: boolean;
   zipMembersEnabled: boolean;
+  pipelineStages: PipelineStageDefinition[];
+  reviewerStageSelection: PipelineStageSelection;
+  memberStageSelection: PipelineStageSelection;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -100,6 +104,9 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
     cacName: coordinator.cacName,
     zipReviewersEnabled: coordinator.zipReviewersEnabled,
     zipMembersEnabled: coordinator.zipMembersEnabled,
+    pipelineStages: coordinator.getPipelineStageDefinitions(),
+    reviewerStageSelection: { ...coordinator.reviewerStageSelection },
+    memberStageSelection: { ...coordinator.memberStageSelection },
     canRunReviewers: coordinator.getCanRunReviewers(),
     canRunMembers: coordinator.getCanRunMembers(),
     lastReviewerOutputDir: coordinator.lastReviewerOutputDir,

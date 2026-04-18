@@ -5,6 +5,15 @@ import { WorkspaceService, WorkspaceInventory } from '../services/workspace/work
 import type { PreparationIssue, PreparationStats, PipelineProgress } from '../services/pdf/pdfPackageProcessor.js';
 import { isPipelineCancelledError, PipelineCancelledError } from '../services/pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../services/pipeline/stages/docxConversionStage.js';
+import {
+  PIPELINE_STAGE_DEFINITIONS,
+  activePipelineStageIds,
+  createDefaultPipelineStageSelection,
+  isPipelineStageId,
+  type PipelineStageDefinition,
+  type PipelineStageId,
+  type PipelineStageSelection,
+} from '../services/pipeline/pipelineStages.js';
 import { ReviewerSummaryBuilder } from './reviewerSummaryBuilder.js';
 
 export interface ManualReviewerAssignment {
@@ -78,6 +87,8 @@ export class DashboardCoordinator {
   cacName = '';
   zipReviewersEnabled = true;
   zipMembersEnabled = true;
+  reviewerStageSelection: PipelineStageSelection = createDefaultPipelineStageSelection();
+  memberStageSelection: PipelineStageSelection = createDefaultPipelineStageSelection();
   lastReviewerOutputDir: string | null = null;
   lastMemberOutputDir: string | null = null;
   lastRunMode: RunMode | null = null;
@@ -126,6 +137,45 @@ export class DashboardCoordinator {
     this.zipMembersEnabled = Boolean(enabled);
     this.appendLog(this.zipMembersEnabled ? 'ZIP membres activés.' : 'ZIP membres désactivés.');
     this.emitChange();
+  }
+
+  setPipelineStageEnabled(mode: string, stageId: string, enabled: boolean): void {
+    if (this.running || (mode !== 'reviewers' && mode !== 'members') || !isPipelineStageId(stageId)) {
+      return;
+    }
+
+    const selection = this.getStageSelection(mode);
+    const next = Boolean(enabled);
+    if (selection[stageId] === next) {
+      return;
+    }
+
+    selection[stageId] = next;
+    const label = this.getStageLabel(stageId);
+    const modeLabel = mode === 'reviewers' ? 'rapporteurs' : 'membres';
+    this.appendLog(`${label} ${modeLabel} ${next ? 'activé' : 'désactivé'}.`);
+    this.emitChange();
+  }
+
+  getPipelineStageDefinitions(): PipelineStageDefinition[] {
+    return PIPELINE_STAGE_DEFINITIONS.map((stage) => ({ ...stage }));
+  }
+
+  getActiveStageIds(mode: RunMode): PipelineStageId[] {
+    return activePipelineStageIds(this.getStageSelection(mode));
+  }
+
+  private getStageSelection(mode: RunMode): PipelineStageSelection {
+    return mode === 'reviewers' ? this.reviewerStageSelection : this.memberStageSelection;
+  }
+
+  private getStageLabel(stageId: PipelineStageId): string {
+    return PIPELINE_STAGE_DEFINITIONS.find((stage) => stage.id === stageId)?.label ?? stageId;
+  }
+
+  private formatActiveStages(mode: RunMode): string {
+    const labels = this.getActiveStageIds(mode).map((stageId) => this.getStageLabel(stageId));
+    return labels.length > 0 ? labels.join(', ') : 'aucune étape optionnelle';
   }
 
   private emitChange(): void {
@@ -241,6 +291,8 @@ export class DashboardCoordinator {
     this.cacName = '';
     this.zipReviewersEnabled = true;
     this.zipMembersEnabled = true;
+    this.reviewerStageSelection = createDefaultPipelineStageSelection();
+    this.memberStageSelection = createDefaultPipelineStageSelection();
     this.lastReviewerOutputDir = null;
     this.lastMemberOutputDir = null;
     this.lastRunMode = null;
@@ -470,6 +522,7 @@ export class DashboardCoordinator {
       this.lastReviewerOutputDir = outputDir;
       this.lastRunMode = 'reviewers';
       this.appendLog('Préparation des packages rapporteurs...');
+      this.appendLog(`Étapes rapporteurs actives: ${this.formatActiveStages('reviewers')}.`);
 
       const stats = await this.reviewerService.prepare(
         packages,
@@ -480,6 +533,7 @@ export class DashboardCoordinator {
         (update: PipelineProgress) => this.updateProgress(update, 'reviewers'),
         this.abortController.signal,
         this.zipReviewersEnabled,
+        this.getActiveStageIds('reviewers'),
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -552,6 +606,7 @@ export class DashboardCoordinator {
       this.lastMemberOutputDir = outputDir;
       this.lastRunMode = 'members';
       this.appendLog('Préparation des packages membres...');
+      this.appendLog(`Étapes membres actives: ${this.formatActiveStages('members')}.`);
 
       const stats = await this.memberService.prepare(
         entries,
@@ -562,6 +617,7 @@ export class DashboardCoordinator {
         (update: PipelineProgress) => this.updateProgress(update, 'members'),
         this.abortController.signal,
         this.zipMembersEnabled,
+        this.getActiveStageIds('members'),
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);

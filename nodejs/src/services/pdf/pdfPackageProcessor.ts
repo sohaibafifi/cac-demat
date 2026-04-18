@@ -6,6 +6,7 @@ import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
 import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
+import type { PipelineStageId } from '../pipeline/pipelineStages.js';
 
 const toPdfBasename = (filename: string): string => {
   const ext = path.extname(filename).toLowerCase();
@@ -70,6 +71,7 @@ export class PdfPackageProcessor {
     afterFileProcessed?: AfterFileProcessed,
     progress?: (progress: PipelineProgress) => void,
     abortSignal?: AbortSignal,
+    activeStages?: readonly PipelineStageId[],
   ): Promise<PreparationStats> {
     throwIfPipelineCancelled(abortSignal);
     const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir, abortSignal));
@@ -90,6 +92,7 @@ export class PdfPackageProcessor {
     const tasks: Array<() => Promise<void>> = [];
     const processedByRecipient = new Map<string, number>();
     const useDefaultLogging = !afterFileProcessed;
+    const restrictionEnabled = activeStages ? activeStages.includes('restriction') : true;
     let completed = 0;
     let totalTasks = 0;
     const throwIfCancelled = () => throwIfPipelineCancelled(abortSignal);
@@ -133,14 +136,14 @@ export class PdfPackageProcessor {
           throwIfCancelled();
           try {
             await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-            const result = await this.pipeline.process(context, logger, abortSignal);
+            const result = await this.pipeline.process(context, logger, abortSignal, activeStages);
             stats.processedFiles += 1;
 
             const current = (processedByRecipient.get(name) ?? 0) + 1;
             processedByRecipient.set(name, current);
 
             if (afterFileProcessed) {
-              await afterFileProcessed(file, name, true, result.password);
+              await afterFileProcessed(file, name, restrictionEnabled, result.password);
             } else if (!useDefaultLogging && result.password) {
               logger?.(`Processed ${file.relative} for ${name} (owner password: ${result.password})`);
             }

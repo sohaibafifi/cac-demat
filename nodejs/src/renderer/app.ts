@@ -26,6 +26,16 @@ type PipelineProgressState = {
   mode: 'reviewers' | 'members' | null;
 };
 
+type PipelineStageId = 'clean' | 'watermark' | 'metadata' | 'restriction';
+
+type PipelineStageDefinition = {
+  id: PipelineStageId;
+  label: string;
+  description: string;
+};
+
+type PipelineStageSelection = Record<PipelineStageId, boolean>;
+
 type CoordinatorState = {
   folder: string | null;
   csvReviewers: string[];
@@ -46,6 +56,9 @@ type CoordinatorState = {
   cacName: string;
   zipReviewersEnabled: boolean;
   zipMembersEnabled: boolean;
+  pipelineStages: PipelineStageDefinition[];
+  reviewerStageSelection: PipelineStageSelection;
+  memberStageSelection: PipelineStageSelection;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -71,6 +84,58 @@ declare global {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const FALLBACK_PIPELINE_STAGES: PipelineStageDefinition[] = [
+  {
+    id: 'clean',
+    label: 'Nettoyage',
+    description: 'Retire les informations sensibles détectées.',
+  },
+  {
+    id: 'watermark',
+    label: 'Filigrane',
+    description: 'Ajoute le nom du destinataire sur chaque page.',
+  },
+  {
+    id: 'metadata',
+    label: 'Métadonnées',
+    description: 'Nettoie les propriétés PDF et renseigne le destinataire.',
+  },
+  {
+    id: 'restriction',
+    label: 'Restrictions PDF',
+    description: 'Empêche impression, extraction et modification.',
+  },
+];
+
+const PIPELINE_STAGE_IDS = FALLBACK_PIPELINE_STAGES.map((stage) => stage.id);
+
+function createDefaultStageSelection(): PipelineStageSelection {
+  return PIPELINE_STAGE_IDS.reduce((selection, stageId) => {
+    selection[stageId] = true;
+    return selection;
+  }, {} as PipelineStageSelection);
+}
+
+function normalizeStageSelection(input?: Partial<Record<PipelineStageId, boolean>>): PipelineStageSelection {
+  const selection = createDefaultStageSelection();
+
+  if (!input) {
+    return selection;
+  }
+
+  PIPELINE_STAGE_IDS.forEach((stageId) => {
+    if (Object.prototype.hasOwnProperty.call(input, stageId)) {
+      selection[stageId] = Boolean(input[stageId]);
+    }
+  });
+
+  return selection;
+}
+
+function isPipelineStageId(value: string): value is PipelineStageId {
+  return PIPELINE_STAGE_IDS.includes(value as PipelineStageId);
+}
 
 const trimPdfExtension = (value: string): string => {
   const label = value.trim();
@@ -140,6 +205,8 @@ const elements = {
   openFolder: document.getElementById('open-folder') as HTMLButtonElement,
   zipReviewersToggle: document.getElementById('zip-reviewers-enabled') as HTMLInputElement,
   zipMembersToggle: document.getElementById('zip-members-enabled') as HTMLInputElement,
+  reviewerStageOptions: document.getElementById('reviewer-stage-options') as HTMLElement,
+  memberStageOptions: document.getElementById('member-stage-options') as HTMLElement,
   openReviewersCsv: document.getElementById('open-reviewers-csv') as HTMLButtonElement,
   openMembersCsv: document.getElementById('open-members-csv') as HTMLButtonElement,
   selectFolder: document.getElementById('select-folder') as HTMLButtonElement,
@@ -232,6 +299,9 @@ function setState(state: CoordinatorState): void {
     runErrors: [...(state.runErrors ?? [])],
     zipReviewersEnabled: state.zipReviewersEnabled !== undefined ? Boolean(state.zipReviewersEnabled) : true,
     zipMembersEnabled: state.zipMembersEnabled !== undefined ? Boolean(state.zipMembersEnabled) : true,
+    pipelineStages: state.pipelineStages?.length ? state.pipelineStages : FALLBACK_PIPELINE_STAGES,
+    reviewerStageSelection: normalizeStageSelection(state.reviewerStageSelection),
+    memberStageSelection: normalizeStageSelection(state.memberStageSelection),
     progress: state.progress
       ? { ...state.progress }
       : {
@@ -406,6 +476,9 @@ function updateActionStates(): void {
     elements.loadMembersCsv.disabled = true;
     elements.zipReviewersToggle.disabled = true;
     elements.zipMembersToggle.disabled = true;
+    document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"]').forEach((input) => {
+      input.disabled = true;
+    });
     elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
       (node as HTMLInputElement | HTMLButtonElement).disabled = true;
     });
@@ -432,6 +505,10 @@ function updateActionStates(): void {
   elements.loadMembersCsv.disabled = busy;
   elements.zipReviewersToggle.disabled = busy || currentState.running;
   elements.zipMembersToggle.disabled = busy || currentState.running;
+  const stageInputsDisabled = busy || currentState.running;
+  document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"]').forEach((input) => {
+    input.disabled = stageInputsDisabled;
+  });
   elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
     (node as HTMLInputElement | HTMLButtonElement).disabled = busy;
   });
@@ -482,6 +559,7 @@ function render(): void {
 
   elements.zipReviewersToggle.checked = Boolean(currentState.zipReviewersEnabled);
   elements.zipMembersToggle.checked = Boolean(currentState.zipMembersEnabled);
+  renderStageSelectors();
   elements.logOutput.value = currentState.log ?? '';
   elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
   renderRunErrors();
@@ -532,6 +610,50 @@ function render(): void {
   renderMembersSelected();
   renderProgress();
   updateActionStates();
+}
+
+function renderStageSelectors(): void {
+  if (!currentState) {
+    return;
+  }
+
+  renderStageSelector(elements.reviewerStageOptions, 'reviewers', currentState.reviewerStageSelection);
+  renderStageSelector(elements.memberStageOptions, 'members', currentState.memberStageSelection);
+}
+
+function renderStageSelector(
+  container: HTMLElement,
+  mode: 'reviewers' | 'members',
+  selection: PipelineStageSelection,
+): void {
+  container.innerHTML = '';
+  const stages = currentState?.pipelineStages?.length ? currentState.pipelineStages : FALLBACK_PIPELINE_STAGES;
+
+  stages.forEach((stage) => {
+    const label = document.createElement('label');
+    label.className = 'stage-option';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = selection[stage.id] !== false;
+    input.dataset.mode = mode;
+    input.dataset.stageId = stage.id;
+
+    const copy = document.createElement('span');
+    copy.className = 'stage-option-copy';
+
+    const title = document.createElement('strong');
+    title.textContent = stage.label;
+    copy.appendChild(title);
+
+    const description = document.createElement('small');
+    description.textContent = stage.description;
+    copy.appendChild(description);
+
+    label.appendChild(input);
+    label.appendChild(copy);
+    container.appendChild(label);
+  });
 }
 
 function renderProgress(): void {
@@ -1088,6 +1210,32 @@ async function updateCoordinator(action: () => Promise<CoordinatorState>): Promi
   }
 }
 
+async function handleStageSelectionChange(event: Event): Promise<void> {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
+    return;
+  }
+
+  const mode = target.dataset.mode;
+  const stageId = target.dataset.stageId;
+  if ((mode !== 'reviewers' && mode !== 'members') || !stageId || !isPipelineStageId(stageId)) {
+    return;
+  }
+
+  const api = await getElectronApiOrWarn();
+  if (!api?.setPipelineStageEnabled) {
+    return;
+  }
+
+  await updateCoordinator(() =>
+    api.setPipelineStageEnabled({
+      mode,
+      stageId,
+      enabled: target.checked,
+    }),
+  );
+}
+
 function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -1182,6 +1330,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const enabled = (event.target as HTMLInputElement).checked;
     await updateCoordinator(() => api.setZipMembersEnabled(enabled));
+  });
+
+  elements.reviewerStageOptions.addEventListener('change', (event) => {
+    void handleStageSelectionChange(event);
+  });
+
+  elements.memberStageOptions.addEventListener('change', (event) => {
+    void handleStageSelectionChange(event);
   });
 
   elements.selectFolder.addEventListener('click', async () => {

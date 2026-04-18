@@ -20,11 +20,11 @@ export function createCoordinator(): DashboardCoordinator {
   const zipService = new ZipService();
 
   const pipeline = new PdfProcessingPipeline([
-    new DocxConversionStage(),
-    new CleanStage(resolver),
-    new WatermarkStage(resolver),
-    new MetadataStage(resolver),
-    new RestrictionStage(resolver, passwordGenerator),
+    { stage: new DocxConversionStage() },
+    { id: 'clean', stage: new CleanStage(resolver) },
+    { id: 'watermark', stage: new WatermarkStage(resolver) },
+    { id: 'metadata', stage: new MetadataStage(resolver) },
+    { id: 'restriction', stage: new RestrictionStage(resolver, passwordGenerator) },
   ]);
 
   const packageProcessor = new PdfPackageProcessor(pipeline);
