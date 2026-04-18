@@ -3,7 +3,7 @@ import path from 'path';
 import { PdfProcessingContext } from '../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './stages/contracts/pdfProcessingStage.js';
 import { throwIfPipelineCancelled } from './pipelineCancelledError.js';
-import type { PipelineStageId } from './pipelineStages.js';
+import type { PdfRestrictionSelection, PipelineStageId } from './pipelineStages.js';
 
 const isSharedResourceStage = (
   stage: PdfProcessingStage | SharedResourceStage,
@@ -24,6 +24,7 @@ export class PdfProcessingPipeline {
     logger?: PipelineLogger,
     abortSignal?: AbortSignal,
     activeStageIds?: readonly PipelineStageId[],
+    restrictionOptions?: PdfRestrictionSelection,
   ): Promise<PdfProcessingContext> {
     let current = context;
 
@@ -32,7 +33,7 @@ export class PdfProcessingPipeline {
 
       for (const { stage } of this.resolveStages(activeStageIds)) {
         throwIfPipelineCancelled(abortSignal);
-        current = await stage.process(current, logger, abortSignal);
+        current = await stage.process(current, logger, abortSignal, { restrictionOptions });
       }
 
       throwIfPipelineCancelled(abortSignal);

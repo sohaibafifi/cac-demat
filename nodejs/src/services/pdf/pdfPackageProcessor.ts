@@ -6,7 +6,7 @@ import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
 import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
-import type { PipelineStageId } from '../pipeline/pipelineStages.js';
+import type { PdfRestrictionSelection, PipelineStageId } from '../pipeline/pipelineStages.js';
 
 const toPdfBasename = (filename: string): string => {
   const ext = path.extname(filename).toLowerCase();
@@ -72,6 +72,7 @@ export class PdfPackageProcessor {
     progress?: (progress: PipelineProgress) => void,
     abortSignal?: AbortSignal,
     activeStages?: readonly PipelineStageId[],
+    restrictionOptions?: PdfRestrictionSelection,
   ): Promise<PreparationStats> {
     throwIfPipelineCancelled(abortSignal);
     const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir, abortSignal));
@@ -136,7 +137,7 @@ export class PdfPackageProcessor {
           throwIfCancelled();
           try {
             await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-            const result = await this.pipeline.process(context, logger, abortSignal, activeStages);
+            const result = await this.pipeline.process(context, logger, abortSignal, activeStages, restrictionOptions);
             stats.processedFiles += 1;
 
             const current = (processedByRecipient.get(name) ?? 0) + 1;

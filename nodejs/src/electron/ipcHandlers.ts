@@ -98,6 +98,18 @@ export class IpcHandlerRegistry {
       },
     );
 
+    this.ipcMain.handle(
+      'coordinator:set-restriction-option-enabled',
+      async (
+        _event: IpcMainInvokeEvent,
+        payload: { mode: string; optionId: string; enabled: boolean },
+      ) => {
+        const coordinator = this.getCoordinator();
+        coordinator.setPdfRestrictionOptionEnabled(payload.mode, payload.optionId, Boolean(payload.enabled));
+        return serializeCoordinatorState(coordinator);
+      },
+    );
+
     this.ipcMain.handle('coordinator:add-manual-reviewer', async (_event: IpcMainInvokeEvent, payload: { file: string; reviewers: string }) => {
       const coordinator = this.getCoordinator();
       coordinator.addManualReviewer(payload.file, payload.reviewers);

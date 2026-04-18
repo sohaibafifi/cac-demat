@@ -36,6 +36,16 @@ type PipelineStageDefinition = {
 
 type PipelineStageSelection = Record<PipelineStageId, boolean>;
 
+type PdfRestrictionOptionId = 'print' | 'extract' | 'modify';
+
+type PdfRestrictionOptionDefinition = {
+  id: PdfRestrictionOptionId;
+  label: string;
+  description: string;
+};
+
+type PdfRestrictionSelection = Record<PdfRestrictionOptionId, boolean>;
+
 type CoordinatorState = {
   folder: string | null;
   csvReviewers: string[];
@@ -59,6 +69,9 @@ type CoordinatorState = {
   pipelineStages: PipelineStageDefinition[];
   reviewerStageSelection: PipelineStageSelection;
   memberStageSelection: PipelineStageSelection;
+  pdfRestrictionOptions: PdfRestrictionOptionDefinition[];
+  reviewerRestrictionSelection: PdfRestrictionSelection;
+  memberRestrictionSelection: PdfRestrictionSelection;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -110,6 +123,26 @@ const FALLBACK_PIPELINE_STAGES: PipelineStageDefinition[] = [
 
 const PIPELINE_STAGE_IDS = FALLBACK_PIPELINE_STAGES.map((stage) => stage.id);
 
+const FALLBACK_PDF_RESTRICTION_OPTIONS: PdfRestrictionOptionDefinition[] = [
+  {
+    id: 'print',
+    label: 'Impression interdite',
+    description: 'Empêche l’impression du PDF.',
+  },
+  {
+    id: 'extract',
+    label: 'Copie et extraction interdites',
+    description: 'Empêche la copie de texte et l’extraction de contenu.',
+  },
+  {
+    id: 'modify',
+    label: 'Modification limitée',
+    description: 'Autorise seulement formulaires, signatures et annotations.',
+  },
+];
+
+const PDF_RESTRICTION_OPTION_IDS = FALLBACK_PDF_RESTRICTION_OPTIONS.map((option) => option.id);
+
 function createDefaultStageSelection(): PipelineStageSelection {
   return PIPELINE_STAGE_IDS.reduce((selection, stageId) => {
     selection[stageId] = true;
@@ -133,8 +166,35 @@ function normalizeStageSelection(input?: Partial<Record<PipelineStageId, boolean
   return selection;
 }
 
+function createDefaultRestrictionSelection(): PdfRestrictionSelection {
+  return PDF_RESTRICTION_OPTION_IDS.reduce((selection, optionId) => {
+    selection[optionId] = true;
+    return selection;
+  }, {} as PdfRestrictionSelection);
+}
+
+function normalizeRestrictionSelection(input?: Partial<Record<PdfRestrictionOptionId, boolean>>): PdfRestrictionSelection {
+  const selection = createDefaultRestrictionSelection();
+
+  if (!input) {
+    return selection;
+  }
+
+  PDF_RESTRICTION_OPTION_IDS.forEach((optionId) => {
+    if (Object.prototype.hasOwnProperty.call(input, optionId)) {
+      selection[optionId] = Boolean(input[optionId]);
+    }
+  });
+
+  return selection;
+}
+
 function isPipelineStageId(value: string): value is PipelineStageId {
   return PIPELINE_STAGE_IDS.includes(value as PipelineStageId);
+}
+
+function isPdfRestrictionOptionId(value: string): value is PdfRestrictionOptionId {
+  return PDF_RESTRICTION_OPTION_IDS.includes(value as PdfRestrictionOptionId);
 }
 
 const trimPdfExtension = (value: string): string => {
@@ -302,6 +362,11 @@ function setState(state: CoordinatorState): void {
     pipelineStages: state.pipelineStages?.length ? state.pipelineStages : FALLBACK_PIPELINE_STAGES,
     reviewerStageSelection: normalizeStageSelection(state.reviewerStageSelection),
     memberStageSelection: normalizeStageSelection(state.memberStageSelection),
+    pdfRestrictionOptions: state.pdfRestrictionOptions?.length
+      ? state.pdfRestrictionOptions
+      : FALLBACK_PDF_RESTRICTION_OPTIONS,
+    reviewerRestrictionSelection: normalizeRestrictionSelection(state.reviewerRestrictionSelection),
+    memberRestrictionSelection: normalizeRestrictionSelection(state.memberRestrictionSelection),
     progress: state.progress
       ? { ...state.progress }
       : {
@@ -476,7 +541,7 @@ function updateActionStates(): void {
     elements.loadMembersCsv.disabled = true;
     elements.zipReviewersToggle.disabled = true;
     elements.zipMembersToggle.disabled = true;
-    document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"]').forEach((input) => {
+    document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"], .restriction-suboption input[type="checkbox"]').forEach((input) => {
       input.disabled = true;
     });
     elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
@@ -490,24 +555,31 @@ function updateActionStates(): void {
 
   const hasReviewerCsv = currentState.csvReviewers.length > 0;
   const hasMemberCsv = currentState.csvMembers.length > 0;
+  const state = currentState;
 
-  elements.runReviewers.disabled = busy || !currentState.canRunReviewers;
-  elements.runMembers.disabled = busy || !currentState.canRunMembers;
-  elements.stopPipeline.disabled = !currentState.running;
-  elements.openFolder.disabled = busy || !currentState.folder;
+  elements.runReviewers.disabled = busy || !state.canRunReviewers;
+  elements.runMembers.disabled = busy || !state.canRunMembers;
+  elements.stopPipeline.disabled = !state.running;
+  elements.openFolder.disabled = busy || !state.folder;
   elements.openReviewersCsv.disabled = busy || !hasReviewerCsv;
   elements.resetReviewersCsv.disabled = busy || !hasReviewerCsv;
   elements.openMembersCsv.disabled = busy || !hasMemberCsv;
   elements.resetMembersCsv.disabled = busy || !hasMemberCsv;
   elements.selectFolder.disabled = busy;
-  elements.resetSession.disabled = busy || currentState.running;
+  elements.resetSession.disabled = busy || state.running;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
-  elements.zipReviewersToggle.disabled = busy || currentState.running;
-  elements.zipMembersToggle.disabled = busy || currentState.running;
-  const stageInputsDisabled = busy || currentState.running;
-  document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"]').forEach((input) => {
-    input.disabled = stageInputsDisabled;
+  elements.zipReviewersToggle.disabled = busy || state.running;
+  elements.zipMembersToggle.disabled = busy || state.running;
+  const stageInputsDisabled = busy || state.running;
+  document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"], .restriction-suboption input[type="checkbox"]').forEach((input) => {
+    const mode = input.dataset.mode;
+    const isRestrictionOption = Boolean(input.dataset.restrictionOptionId);
+    const restrictionStageEnabled = mode === 'members'
+      ? state.memberStageSelection.restriction
+      : state.reviewerStageSelection.restriction;
+
+    input.disabled = stageInputsDisabled || (isRestrictionOption && !restrictionStageEnabled);
   });
   elements.manualReviewerForm.querySelectorAll('input, button').forEach((node) => {
     (node as HTMLInputElement | HTMLButtonElement).disabled = busy;
@@ -617,14 +689,25 @@ function renderStageSelectors(): void {
     return;
   }
 
-  renderStageSelector(elements.reviewerStageOptions, 'reviewers', currentState.reviewerStageSelection);
-  renderStageSelector(elements.memberStageOptions, 'members', currentState.memberStageSelection);
+  renderStageSelector(
+    elements.reviewerStageOptions,
+    'reviewers',
+    currentState.reviewerStageSelection,
+    currentState.reviewerRestrictionSelection,
+  );
+  renderStageSelector(
+    elements.memberStageOptions,
+    'members',
+    currentState.memberStageSelection,
+    currentState.memberRestrictionSelection,
+  );
 }
 
 function renderStageSelector(
   container: HTMLElement,
   mode: 'reviewers' | 'members',
   selection: PipelineStageSelection,
+  restrictionSelection: PdfRestrictionSelection,
 ): void {
   container.innerHTML = '';
   const stages = currentState?.pipelineStages?.length ? currentState.pipelineStages : FALLBACK_PIPELINE_STAGES;
@@ -653,7 +736,54 @@ function renderStageSelector(
     label.appendChild(input);
     label.appendChild(copy);
     container.appendChild(label);
+
+    if (stage.id === 'restriction') {
+      container.appendChild(renderRestrictionSuboptions(mode, restrictionSelection, input.checked));
+    }
   });
+}
+
+function renderRestrictionSuboptions(
+  mode: 'reviewers' | 'members',
+  selection: PdfRestrictionSelection,
+  parentEnabled: boolean,
+): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'restriction-suboptions';
+  container.dataset.enabled = parentEnabled ? 'true' : 'false';
+
+  const options = currentState?.pdfRestrictionOptions?.length
+    ? currentState.pdfRestrictionOptions
+    : FALLBACK_PDF_RESTRICTION_OPTIONS;
+
+  options.forEach((option) => {
+    const label = document.createElement('label');
+    label.className = 'restriction-suboption';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = selection[option.id] !== false;
+    input.disabled = !parentEnabled;
+    input.dataset.mode = mode;
+    input.dataset.restrictionOptionId = option.id;
+
+    const copy = document.createElement('span');
+    copy.className = 'restriction-suboption-copy';
+
+    const title = document.createElement('strong');
+    title.textContent = option.label;
+    copy.appendChild(title);
+
+    const description = document.createElement('small');
+    description.textContent = option.description;
+    copy.appendChild(description);
+
+    label.appendChild(input);
+    label.appendChild(copy);
+    container.appendChild(label);
+  });
+
+  return container;
 }
 
 function renderProgress(): void {
@@ -1217,6 +1347,23 @@ async function handleStageSelectionChange(event: Event): Promise<void> {
   }
 
   const mode = target.dataset.mode;
+  const optionId = target.dataset.restrictionOptionId;
+  if ((mode === 'reviewers' || mode === 'members') && optionId && isPdfRestrictionOptionId(optionId)) {
+    const api = await getElectronApiOrWarn();
+    if (!api?.setPdfRestrictionOptionEnabled) {
+      return;
+    }
+
+    await updateCoordinator(() =>
+      api.setPdfRestrictionOptionEnabled({
+        mode,
+        optionId,
+        enabled: target.checked,
+      }),
+    );
+    return;
+  }
+
   const stageId = target.dataset.stageId;
   if ((mode !== 'reviewers' && mode !== 'members') || !stageId || !isPipelineStageId(stageId)) {
     return;

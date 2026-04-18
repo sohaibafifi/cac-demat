@@ -75,7 +75,10 @@ Une fois les attributions configurées :
     *   **Nettoyage** : retire les informations sensibles détectées.
     *   **Filigrane** : ajoute le nom du rapporteur sur chaque page.
     *   **Métadonnées** : nettoie les propriétés PDF.
-    *   **Restrictions PDF** : bloque impression, extraction et modification.
+    *   **Restrictions PDF** : applique les sous-options cochées.
+        *   **Impression interdite** : empêche l'impression du PDF.
+        *   **Copie et extraction interdites** : empêche la copie de texte et l'extraction de contenu.
+        *   **Modification limitée** : autorise seulement formulaires, signatures et annotations.
 2.  Cliquez sur le bouton bleu **"🚀 Lancer le pipeline rapporteurs"**.
 3.  Une barre de progression (ou un indicateur d'état) s'affiche.
 4.  À la fin, un message vous confirme le nombre de dossiers générés.
@@ -115,6 +118,7 @@ Permet de distribuer des lots de dossiers à des membres.
 Vérifiez les **Étapes actives membres**, puis cliquez sur **"🛡️ Lancer le pipeline membres"**. L'application créera un dossier par membre contenant les fichiers demandés.
 
 La conversion des documents Word/ODT/RTF en PDF reste automatique pour les deux pipelines, même si toutes les étapes optionnelles sont désactivées.
+Les sous-options **Restrictions PDF** sont indépendantes entre rapporteurs et membres.
 
 ---
 

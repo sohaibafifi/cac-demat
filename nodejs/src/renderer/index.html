@@ -544,6 +544,51 @@
         line-height: 1.35;
       }
 
+      .restriction-suboptions {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.4rem;
+        margin-top: -0.15rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px dashed rgba(37, 99, 235, 0.26);
+        border-radius: 10px;
+        background: rgba(37, 99, 235, 0.05);
+      }
+
+      .restriction-suboptions[data-enabled="false"] {
+        opacity: 0.55;
+      }
+
+      .restriction-suboption {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+      }
+
+      .restriction-suboption input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        margin-top: 0.1rem;
+        accent-color: var(--accent);
+      }
+
+      .restriction-suboption-copy {
+        display: grid;
+        gap: 0.08rem;
+        min-width: 0;
+      }
+
+      .restriction-suboption-copy strong {
+        font-size: 0.78rem;
+      }
+
+      .restriction-suboption-copy small {
+        color: var(--muted);
+        font-size: 0.72rem;
+        line-height: 1.3;
+      }
+
       .consultation { display: flex; flex-direction: column; gap: 0.5rem; }
 
       footer {

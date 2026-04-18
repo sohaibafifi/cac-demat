@@ -21,6 +21,7 @@ const api = {
   setZipReviewersEnabled: (enabled) => ipcRenderer.invoke('coordinator:set-zip-reviewers-enabled', enabled),
   setZipMembersEnabled: (enabled) => ipcRenderer.invoke('coordinator:set-zip-members-enabled', enabled),
   setPipelineStageEnabled: (payload) => ipcRenderer.invoke('coordinator:set-stage-enabled', payload),
+  setPdfRestrictionOptionEnabled: (payload) => ipcRenderer.invoke('coordinator:set-restriction-option-enabled', payload),
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop'),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),

@@ -1,5 +1,10 @@
 import type { DashboardCoordinator } from '../app/dashboardCoordinator.js';
-import type { PipelineStageDefinition, PipelineStageSelection } from '../services/pipeline/pipelineStages.js';
+import type {
+  PdfRestrictionOptionDefinition,
+  PdfRestrictionSelection,
+  PipelineStageDefinition,
+  PipelineStageSelection,
+} from '../services/pipeline/pipelineStages.js';
 
 export interface SerializedCoordinatorState {
   folder: string | null;
@@ -25,6 +30,9 @@ export interface SerializedCoordinatorState {
   pipelineStages: PipelineStageDefinition[];
   reviewerStageSelection: PipelineStageSelection;
   memberStageSelection: PipelineStageSelection;
+  pdfRestrictionOptions: PdfRestrictionOptionDefinition[];
+  reviewerRestrictionSelection: PdfRestrictionSelection;
+  memberRestrictionSelection: PdfRestrictionSelection;
   canRunReviewers: boolean;
   canRunMembers: boolean;
   lastReviewerOutputDir: string | null;
@@ -107,6 +115,9 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
     pipelineStages: coordinator.getPipelineStageDefinitions(),
     reviewerStageSelection: { ...coordinator.reviewerStageSelection },
     memberStageSelection: { ...coordinator.memberStageSelection },
+    pdfRestrictionOptions: coordinator.getPdfRestrictionOptionDefinitions(),
+    reviewerRestrictionSelection: { ...coordinator.reviewerRestrictionSelection },
+    memberRestrictionSelection: { ...coordinator.memberRestrictionSelection },
     canRunReviewers: coordinator.getCanRunReviewers(),
     canRunMembers: coordinator.getCanRunMembers(),
     lastReviewerOutputDir: coordinator.lastReviewerOutputDir,

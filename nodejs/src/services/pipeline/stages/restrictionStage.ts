@@ -6,6 +6,11 @@ import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
 import { PasswordGenerator } from '../../../support/security/passwordGenerator.js';
 import { runCommand } from '../../../utils/process.js';
 import { throwIfPipelineCancelled } from '../pipelineCancelledError.js';
+import {
+  createDefaultPdfRestrictionSelection,
+  type PdfRestrictionSelection,
+  type PipelineExecutionOptions,
+} from '../pipelineStages.js';
 
 export class RestrictionStage implements PdfProcessingStage {
   constructor(
@@ -17,15 +22,19 @@ export class RestrictionStage implements PdfProcessingStage {
     context: PdfProcessingContext,
     logger?: PipelineLogger,
     abortSignal?: AbortSignal,
+    options?: PipelineExecutionOptions,
   ): Promise<PdfProcessingContext> {
     throwIfPipelineCancelled(abortSignal);
     const finalPath = context.targetPath();
     const password = this.passwordGenerator.generate(12);
+    const restrictionOptions = options?.restrictionOptions ?? createDefaultPdfRestrictionSelection();
 
-    await this.applyRestrictions(context.workingPath, finalPath, password, logger, abortSignal);
+    await this.applyRestrictions(context.workingPath, finalPath, password, restrictionOptions, logger, abortSignal);
 
     if (context.useDefaultLogging) {
-      logger?.(`Processed ${context.relativePath} for ${context.recipient} (owner password: ${password})`);
+      logger?.(
+        `Processed ${context.relativePath} for ${context.recipient} (owner password: ${password}, restrictions: ${this.describeRestrictions(restrictionOptions)})`,
+      );
     }
 
     return context.withWorkingPath(finalPath, false).withPassword(password);
@@ -35,6 +44,7 @@ export class RestrictionStage implements PdfProcessingStage {
     inputPath: string,
     outputPath: string,
     password: string,
+    restrictionOptions: PdfRestrictionSelection,
     logger?: PipelineLogger,
     abortSignal?: AbortSignal,
   ): Promise<void> {
@@ -50,9 +60,9 @@ export class RestrictionStage implements PdfProcessingStage {
         '',
         password,
         '256',
-        '--print=none',
-        '--extract=n',
-        '--modify=annotate',
+        `--print=${restrictionOptions.print ? 'none' : 'full'}`,
+        `--extract=${restrictionOptions.extract ? 'n' : 'y'}`,
+        `--modify=${restrictionOptions.modify ? 'annotate' : 'all'}`,
         '--',
         inputPath,
         outputPath,
@@ -78,5 +88,15 @@ export class RestrictionStage implements PdfProcessingStage {
       const error = result.stderr.trim() || result.stdout.trim();
       throw new Error(error || 'Échec de l\'application des restrictions.');
     }
+  }
+
+  private describeRestrictions(restrictionOptions: PdfRestrictionSelection): string {
+    const active = [
+      restrictionOptions.print ? 'impression interdite' : null,
+      restrictionOptions.extract ? 'copie interdite' : null,
+      restrictionOptions.modify ? 'modification limitée' : null,
+    ].filter(Boolean);
+
+    return active.length > 0 ? active.join(', ') : 'aucune permission bloquée';
   }
 }

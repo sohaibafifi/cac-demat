@@ -31,6 +31,8 @@ const api = {
   setZipMembersEnabled: (enabled: boolean) => ipcRenderer.invoke('coordinator:set-zip-members-enabled', enabled) as Promise<any>,
   setPipelineStageEnabled: (payload: { mode: 'reviewers' | 'members'; stageId: string; enabled: boolean }) =>
     ipcRenderer.invoke('coordinator:set-stage-enabled', payload) as Promise<any>,
+  setPdfRestrictionOptionEnabled: (payload: { mode: 'reviewers' | 'members'; optionId: string; enabled: boolean }) =>
+    ipcRenderer.invoke('coordinator:set-restriction-option-enabled', payload) as Promise<any>,
   runPipeline: (mode: 'reviewers' | 'members') =>
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop') as Promise<any>,

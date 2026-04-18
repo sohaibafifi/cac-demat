@@ -1,4 +1,5 @@
 import { PdfProcessingContext } from '../../../pdf/pdfProcessingContext.js';
+import type { PipelineExecutionOptions } from '../../pipelineStages.js';
 
 export type PipelineLogger = (message: string) => void;
 
@@ -7,6 +8,7 @@ export interface PdfProcessingStage {
     context: PdfProcessingContext,
     logger?: PipelineLogger,
     abortSignal?: AbortSignal,
+    options?: PipelineExecutionOptions,
   ): Promise<PdfProcessingContext>;
 }
 

@@ -10,7 +10,7 @@ import {
 } from '../pdf/pdfPackageProcessor.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { ZipService, ZipTarget } from '../zip/zipService.js';
-import type { PipelineStageId } from './pipelineStages.js';
+import type { PdfRestrictionSelection, PipelineStageId } from './pipelineStages.js';
 
 export interface MemberEntry {
   name: string;
@@ -33,6 +33,7 @@ export class MemberPreparationService {
     abortSignal?: AbortSignal,
     zipEnabled = true,
     activeStages?: readonly PipelineStageId[],
+    restrictionOptions?: PdfRestrictionSelection,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
@@ -89,6 +90,7 @@ export class MemberPreparationService {
       progress,
       abortSignal,
       activeStages,
+      restrictionOptions,
     );
 
     if (zipTargets.length > 0 && zipEnabled) {

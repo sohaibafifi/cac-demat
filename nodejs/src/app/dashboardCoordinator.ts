@@ -6,10 +6,16 @@ import type { PreparationIssue, PreparationStats, PipelineProgress } from '../se
 import { isPipelineCancelledError, PipelineCancelledError } from '../services/pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../services/pipeline/stages/docxConversionStage.js';
 import {
+  PDF_RESTRICTION_OPTION_DEFINITIONS,
   PIPELINE_STAGE_DEFINITIONS,
   activePipelineStageIds,
+  createDefaultPdfRestrictionSelection,
   createDefaultPipelineStageSelection,
+  isPdfRestrictionOptionId,
   isPipelineStageId,
+  type PdfRestrictionOptionDefinition,
+  type PdfRestrictionOptionId,
+  type PdfRestrictionSelection,
   type PipelineStageDefinition,
   type PipelineStageId,
   type PipelineStageSelection,
@@ -89,6 +95,8 @@ export class DashboardCoordinator {
   zipMembersEnabled = true;
   reviewerStageSelection: PipelineStageSelection = createDefaultPipelineStageSelection();
   memberStageSelection: PipelineStageSelection = createDefaultPipelineStageSelection();
+  reviewerRestrictionSelection: PdfRestrictionSelection = createDefaultPdfRestrictionSelection();
+  memberRestrictionSelection: PdfRestrictionSelection = createDefaultPdfRestrictionSelection();
   lastReviewerOutputDir: string | null = null;
   lastMemberOutputDir: string | null = null;
   lastRunMode: RunMode | null = null;
@@ -157,8 +165,30 @@ export class DashboardCoordinator {
     this.emitChange();
   }
 
+  setPdfRestrictionOptionEnabled(mode: string, optionId: string, enabled: boolean): void {
+    if (this.running || (mode !== 'reviewers' && mode !== 'members') || !isPdfRestrictionOptionId(optionId)) {
+      return;
+    }
+
+    const selection = this.getRestrictionSelection(mode);
+    const next = Boolean(enabled);
+    if (selection[optionId] === next) {
+      return;
+    }
+
+    selection[optionId] = next;
+    const label = this.getRestrictionOptionLabel(optionId);
+    const modeLabel = mode === 'reviewers' ? 'rapporteurs' : 'membres';
+    this.appendLog(`${label} ${modeLabel} ${next ? 'activée' : 'désactivée'}.`);
+    this.emitChange();
+  }
+
   getPipelineStageDefinitions(): PipelineStageDefinition[] {
     return PIPELINE_STAGE_DEFINITIONS.map((stage) => ({ ...stage }));
+  }
+
+  getPdfRestrictionOptionDefinitions(): PdfRestrictionOptionDefinition[] {
+    return PDF_RESTRICTION_OPTION_DEFINITIONS.map((option) => ({ ...option }));
   }
 
   getActiveStageIds(mode: RunMode): PipelineStageId[] {
@@ -173,9 +203,30 @@ export class DashboardCoordinator {
     return PIPELINE_STAGE_DEFINITIONS.find((stage) => stage.id === stageId)?.label ?? stageId;
   }
 
+  private getRestrictionSelection(mode: RunMode): PdfRestrictionSelection {
+    return mode === 'reviewers' ? this.reviewerRestrictionSelection : this.memberRestrictionSelection;
+  }
+
+  private getRestrictionOptionLabel(optionId: PdfRestrictionOptionId): string {
+    return PDF_RESTRICTION_OPTION_DEFINITIONS.find((option) => option.id === optionId)?.label ?? optionId;
+  }
+
   private formatActiveStages(mode: RunMode): string {
     const labels = this.getActiveStageIds(mode).map((stageId) => this.getStageLabel(stageId));
     return labels.length > 0 ? labels.join(', ') : 'aucune étape optionnelle';
+  }
+
+  private formatActiveRestrictions(mode: RunMode): string {
+    if (!this.getStageSelection(mode).restriction) {
+      return 'étape désactivée';
+    }
+
+    const selection = this.getRestrictionSelection(mode);
+    const labels = PDF_RESTRICTION_OPTION_DEFINITIONS
+      .filter((option) => selection[option.id])
+      .map((option) => option.label);
+
+    return labels.length > 0 ? labels.join(', ') : 'aucune permission bloquée';
   }
 
   private emitChange(): void {
@@ -293,6 +344,8 @@ export class DashboardCoordinator {
     this.zipMembersEnabled = true;
     this.reviewerStageSelection = createDefaultPipelineStageSelection();
     this.memberStageSelection = createDefaultPipelineStageSelection();
+    this.reviewerRestrictionSelection = createDefaultPdfRestrictionSelection();
+    this.memberRestrictionSelection = createDefaultPdfRestrictionSelection();
     this.lastReviewerOutputDir = null;
     this.lastMemberOutputDir = null;
     this.lastRunMode = null;
@@ -523,6 +576,7 @@ export class DashboardCoordinator {
       this.lastRunMode = 'reviewers';
       this.appendLog('Préparation des packages rapporteurs...');
       this.appendLog(`Étapes rapporteurs actives: ${this.formatActiveStages('reviewers')}.`);
+      this.appendLog(`Sous-options Restrictions PDF rapporteurs: ${this.formatActiveRestrictions('reviewers')}.`);
 
       const stats = await this.reviewerService.prepare(
         packages,
@@ -534,6 +588,7 @@ export class DashboardCoordinator {
         this.abortController.signal,
         this.zipReviewersEnabled,
         this.getActiveStageIds('reviewers'),
+        { ...this.reviewerRestrictionSelection },
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -607,6 +662,7 @@ export class DashboardCoordinator {
       this.lastRunMode = 'members';
       this.appendLog('Préparation des packages membres...');
       this.appendLog(`Étapes membres actives: ${this.formatActiveStages('members')}.`);
+      this.appendLog(`Sous-options Restrictions PDF membres: ${this.formatActiveRestrictions('members')}.`);
 
       const stats = await this.memberService.prepare(
         entries,
@@ -618,6 +674,7 @@ export class DashboardCoordinator {
         this.abortController.signal,
         this.zipMembersEnabled,
         this.getActiveStageIds('members'),
+        { ...this.memberRestrictionSelection },
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
