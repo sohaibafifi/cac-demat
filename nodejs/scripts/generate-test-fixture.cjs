@@ -27,6 +27,11 @@ const FIRST_NAMES = [
   'Maya', 'Victor', 'Iris', 'Evan', 'Louna', 'Raphael', 'Clara', 'Sacha',
 ];
 
+const CNU_SECTIONS = ['01', '05', '06', '07', '16', '19', '27', '60', '61', '63', '64', '70', '71', '74'];
+const GRADES = ['MCF', 'MCF HC', 'PR', 'PR 1C', 'PR 2C'];
+const COMPOSANTES = ['UFR Sciences', 'UFR Droit', 'IUT', 'INSPE', 'UFR STAPS'];
+const RESEARCH_UNITS = ['UR 2462', 'UMR 8188', 'ULR 4515', 'EA 4027', 'UMR 8524'];
+
 const parseArgs = (argv) => {
   const options = {
     profile: 'rich',
@@ -230,6 +235,7 @@ Ce dossier est genere automatiquement par \`npm run generate:test-fixture\`.
 - \`imports/reviewers/reviewers_exact.csv\` : chemins explicites
 - \`imports/reviewers/reviewers_matching.xlsx\` : appariement nom/prenom
 - \`imports/reviewers/reviewers_missing.xlsx\` : candidat absent pour tester les manquants
+- les imports rapporteurs contiennent aussi CNU, grade, composante et unite de recherche pour tester les rapports RIPEC
 
 ## Imports membres
 
@@ -256,6 +262,7 @@ Ce dossier est genere automatiquement par \`npm run generate:perf-fixture\`.
 - plusieurs sous-dossiers pour les tests de repertoire et de jokers
 - \`imports/reviewers/reviewers_exact.csv\` pour les chemins explicites
 - \`imports/reviewers/reviewers_matching.xlsx\` pour le matching nom/prenom
+- les imports rapporteurs incluent CNU, grade, composante et unite de recherche pour tester les rapports RIPEC
 - \`imports/members/members_all_files.csv\` pour un test de charge maximal
 - \`imports/members/members_mixed.csv\` pour les references racine, dossiers, jokers et noms
 `;
@@ -354,22 +361,22 @@ const createRichFixture = async (outputRoot, textutilPath) => {
   await writeText(
     path.join(reviewersDir, 'reviewers_exact.csv'),
     [
-      'file;reviewer 1;reviewer 2',
-      'Dupont Jean.pdf;Rapporteur A;Rapporteur B',
-      'sample_1/Candidat special.pdf;Rapporteur C;',
-      `Docs/${docxCreated ? 'Guide membres.docx' : 'Notice conversion.rtf'};Rapporteur D;`,
+      'file;Nom;Prenom;CNU;Grade;Composante;Unité de recherche;reviewer 1;reviewer 2',
+      'Dupont Jean.pdf;Dupont;Jean;27;MCF;UFR Sciences;UR 2462;Rapporteur A;Rapporteur B',
+      'sample_1/Candidat special.pdf;Special;Candidat;06;PR;IUT;UMR 8188;Rapporteur C;',
+      `Docs/${docxCreated ? 'Guide membres.docx' : 'Notice conversion.rtf'};Conversion;Guide;71;MCF HC;INSPE;ULR 4515;Rapporteur D;`,
     ].join('\n'),
   );
 
   await writeWorkbook(
     path.join(reviewersDir, 'reviewers_matching.xlsx'),
     [
-      ['Nom d\'usage', 'Prenom', 'Rapporteur 1', 'Rapporteur 2'],
-      ['Dupont', 'Jean', 'Rapporteur A', 'Rapporteur B'],
-      ['Martin', 'Marie', 'Rapporteur C', ''],
-      ["O'Neil", 'Anne-Marie', 'Rapporteur D', 'Rapporteur E'],
-      ['Dufour', 'Elodie', 'Rapporteur F', ''],
-      ['Ligne cachee', 'Invisible', 'Rapporteur X', ''],
+      ['Nom d\'usage', 'Prenom', 'CNU', 'Grade', 'Composante', 'Unité de recherche', 'Rapporteur 1', 'Rapporteur 2'],
+      ['Dupont', 'Jean', '27', 'MCF', 'UFR Sciences', 'UR 2462', 'Rapporteur A', 'Rapporteur B'],
+      ['Martin', 'Marie', '06', 'PR', 'UFR Droit', 'UMR 8188', 'Rapporteur C', ''],
+      ["O'Neil", 'Anne-Marie', '71', 'MCF HC', 'INSPE', 'ULR 4515', 'Rapporteur D', 'Rapporteur E'],
+      ['Dufour', 'Elodie', '64', 'PR 1C', 'IUT', 'EA 4027', 'Rapporteur F', ''],
+      ['Ligne cachee', 'Invisible', '01', 'MCF', 'UFR Sciences', 'UR masquee', 'Rapporteur X', ''],
     ],
     [5],
   );
@@ -377,9 +384,9 @@ const createRichFixture = async (outputRoot, textutilPath) => {
   await writeWorkbook(
     path.join(reviewersDir, 'reviewers_missing.xlsx'),
     [
-      ['Nom', 'Prenom', 'Rapporteur 1'],
-      ['Dupont', 'Jean', 'Rapporteur A'],
-      ['Fantome', 'Alice', 'Rapporteur Z'],
+      ['Nom', 'Prenom', 'CNU', 'Grade', 'Composante', 'Unité de recherche', 'Rapporteur 1'],
+      ['Dupont', 'Jean', '27', 'MCF', 'UFR Sciences', 'UR 2462', 'Rapporteur A'],
+      ['Fantome', 'Alice', '16', 'PR', 'UFR Droit', 'UR inexistante', 'Rapporteur Z'],
     ],
   );
 
@@ -467,6 +474,10 @@ const buildCandidateEntries = (count, docxAvailable) => {
       firstName,
       lastName,
       displayName,
+      cnu: CNU_SECTIONS[index % CNU_SECTIONS.length],
+      grade: GRADES[index % GRADES.length],
+      composante: COMPOSANTES[index % COMPOSANTES.length],
+      researchUnit: RESEARCH_UNITS[index % RESEARCH_UNITS.length],
       folder,
       extension,
       relativePath,
@@ -520,6 +531,13 @@ const writeEntry = async (sourceRoot, entry, textutilPath) => {
     `Candidate: ${entry.displayName ?? entry.relativePath}`,
     `Relative path: ${entry.relativePath}`,
   ];
+
+  if (entry.cnu || entry.grade || entry.composante || entry.researchUnit) {
+    lines.push(`CNU: ${entry.cnu ?? ''}`);
+    lines.push(`Grade: ${entry.grade ?? ''}`);
+    lines.push(`Composante: ${entry.composante ?? ''}`);
+    lines.push(`Unite de recherche: ${entry.researchUnit ?? ''}`);
+  }
 
   if (entry.includeSensitiveToken) {
     lines.push('Sensitive token: 12 G 34 12345 ABC');
@@ -593,21 +611,38 @@ const createPerformanceFixture = async (outputRoot, options, textutilPath) => {
   await fs.mkdir(reviewersDir, { recursive: true });
   await fs.mkdir(membersDir, { recursive: true });
 
-  const exactReviewerRows = ['file;reviewer 1;reviewer 2'];
+  const exactReviewerRows = ['file;Nom;Prenom;CNU;Grade;Composante;Unité de recherche;reviewer 1;reviewer 2'];
   for (let index = 0; index < candidateEntries.length; index += 1) {
+    const candidate = candidateEntries[index];
     const reviewerOne = reviewerPool[index % reviewerPool.length];
     const reviewerTwo = reviewerPool[(index + 7) % reviewerPool.length];
-    exactReviewerRows.push(`${candidateEntries[index].relativePath};${reviewerOne};${reviewerTwo}`);
+    exactReviewerRows.push([
+      candidate.relativePath,
+      candidate.lastName,
+      candidate.firstName,
+      candidate.cnu,
+      candidate.grade,
+      candidate.composante,
+      candidate.researchUnit,
+      reviewerOne,
+      reviewerTwo,
+    ].join(';'));
   }
 
   await writeText(path.join(reviewersDir, 'reviewers_exact.csv'), exactReviewerRows.join('\n'));
 
-  const reviewerWorkbookRows = [['Nom d\'usage', 'Prenom', 'Rapporteur 1', 'Rapporteur 2']];
+  const reviewerWorkbookRows = [
+    ['Nom d\'usage', 'Prenom', 'CNU', 'Grade', 'Composante', 'Unité de recherche', 'Rapporteur 1', 'Rapporteur 2'],
+  ];
   for (let index = 0; index < candidateEntries.length; index += 1) {
     const candidate = candidateEntries[index];
     reviewerWorkbookRows.push([
       candidate.lastName,
       candidate.firstName,
+      candidate.cnu,
+      candidate.grade,
+      candidate.composante,
+      candidate.researchUnit,
       reviewerPool[index % reviewerPool.length],
       reviewerPool[(index + 3) % reviewerPool.length],
     ]);
@@ -617,9 +652,17 @@ const createPerformanceFixture = async (outputRoot, options, textutilPath) => {
   await writeWorkbook(
     path.join(reviewersDir, 'reviewers_missing.xlsx'),
     [
-      ['Nom', 'Prenom', 'Rapporteur 1'],
-      [candidateEntries[0].lastName, candidateEntries[0].firstName, reviewerPool[0]],
-      ['Fantome', 'Performance', reviewerPool[1]],
+      ['Nom', 'Prenom', 'CNU', 'Grade', 'Composante', 'Unité de recherche', 'Rapporteur 1'],
+      [
+        candidateEntries[0].lastName,
+        candidateEntries[0].firstName,
+        candidateEntries[0].cnu,
+        candidateEntries[0].grade,
+        candidateEntries[0].composante,
+        candidateEntries[0].researchUnit,
+        reviewerPool[0],
+      ],
+      ['Fantome', 'Performance', '16', 'PR', 'UFR Droit', 'UR Performance', reviewerPool[1]],
     ],
   );
 

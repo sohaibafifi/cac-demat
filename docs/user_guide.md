@@ -33,6 +33,9 @@ L'application est disponible pour **Windows**, **macOS** et **Linux**.
 Avant toute action, renseignez les informations de base :
 
 *   **Nom du CAC** : Le nom de la session (ex: `CAC 2025`). Ce nom sera utilisé pour nommer les dossiers générés.
+*   **Type du CAC** : choisissez `Avancement` ou `RIPEC`.
+    *   En `RIPEC`, le pipeline rapporteurs ajoute automatiquement un rapport nominatif par dossier candidat à reviewer.
+    *   Les fichiers RIPEC sont nommés avec le nom du dossier candidat avant le nom du rapporteur, par exemple `Rapport RIPEC - Candidat - Dr Martin.docx`.
 *   **Dossier de travail** : Cliquez sur **"Sélectionner un dossier"** pour choisir le répertoire contenant tous les fichiers PDF des candidats.
 
 > ⚠️ **Important :** Tous les fichiers PDF (candidatures) doivent se trouver dans ce dossier ou ses sous-dossiers. L'application scannera ce répertoire pour trouver les fichiers correspondants aux noms.
@@ -51,6 +54,7 @@ C'est la méthode recommandée pour traiter un grand nombre de dossiers.
 2.  Structurez-le avec les colonnes suivantes :
     *   `Nom` (ou `Nom d'usage`)
     *   `Prénom`
+    *   `CNU`, `Grade`, `Composante`, `Unité de recherche` (optionnels, utilisés pour préremplir les rapports RIPEC)
     *   `Rapporteur 1`
     *   `Rapporteur 2` (optionnel)
 3.  Dans l'application, section "Import tableur", cliquez sur **"Ajouter un fichier"**.

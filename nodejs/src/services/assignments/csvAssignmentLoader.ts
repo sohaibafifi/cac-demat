@@ -4,11 +4,21 @@ import XLSX from 'xlsx';
 import { parseCsv, CsvTable } from '../../utils/csv.js';
 import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
 
+export interface CandidateMetadata {
+  firstName?: string;
+  lastName?: string;
+  cnu?: string;
+  grade?: string;
+  composante?: string;
+  researchUnit?: string;
+}
+
 export interface ReviewerAssignment {
   file: string;
   reviewers: string[];
   source: 'csv';
   label?: string;
+  candidate?: CandidateMetadata;
 }
 
 export interface MemberAssignment {
@@ -33,7 +43,8 @@ export class CsvAssignmentLoader {
     }
 
     const headers = table.headers;
-    const fileHeader = headers.find((header) => header.toLowerCase() === 'file') ?? headers[0] ?? 'file';
+    const headerMap = this.buildHeaderMap(headers);
+    const fileHeader = headerMap.get('file') ?? headers[0] ?? 'file';
     const assignments: ReviewerAssignment[] = [];
 
     for (const row of table.records) {
@@ -44,7 +55,8 @@ export class CsvAssignmentLoader {
 
       const reviewers: string[] = [];
       for (const [key, value] of Object.entries(row)) {
-        if (!key.toLowerCase().startsWith('reviewer')) {
+        const normalizedKey = normalizeHeader(key);
+        if (!normalizedKey.startsWith('reviewer') && !normalizedKey.startsWith('rapporteur')) {
           continue;
         }
 
@@ -58,7 +70,15 @@ export class CsvAssignmentLoader {
         continue;
       }
 
-      assignments.push({ file, reviewers, source: 'csv', label: file });
+      const candidate = this.extractCandidateFromRecord(row, headerMap);
+      const hasCandidateName = Boolean(candidate.firstName || candidate.lastName);
+      assignments.push({
+        file,
+        reviewers: Array.from(new Set(reviewers)),
+        source: 'csv',
+        label: hasCandidateName ? this.buildDisplayName(candidate.firstName ?? '', candidate.lastName ?? '') : file,
+        ...(hasCandidateMetadata(candidate) ? { candidate } : {}),
+      });
     }
 
     return assignments;
@@ -83,8 +103,9 @@ export class CsvAssignmentLoader {
       const assignments: ReviewerAssignment[] = [];
 
       for (const row of normalizedRows) {
-        const lastName = getFirstNonEmpty(row, ['nomdusage', 'nomusage', 'nom']);
-        const firstName = getFirstNonEmpty(row, ['prenom', 'prenoms']);
+        const candidate = this.extractCandidateFromSpreadsheetRow(row);
+        const lastName = candidate.lastName ?? '';
+        const firstName = candidate.firstName ?? '';
         const reviewers = this.extractReviewersFromRow(row);
 
         if (reviewers.length === 0) {
@@ -103,6 +124,7 @@ export class CsvAssignmentLoader {
           reviewers,
           source: 'csv',
           label: this.buildDisplayName(firstName, lastName),
+          candidate,
         });
       }
 
@@ -287,6 +309,58 @@ export class CsvAssignmentLoader {
     return normalized;
   }
 
+  private buildHeaderMap(headers: string[]): Map<string, string> {
+    const headerMap = new Map<string, string>();
+
+    for (const raw of headers) {
+      const trimmed = (raw ?? '').toString().trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      const normalized = normalizeHeader(trimmed);
+      if (normalized && !headerMap.has(normalized)) {
+        headerMap.set(normalized, raw);
+      }
+    }
+
+    return headerMap;
+  }
+
+  private extractCandidateFromRecord(row: Record<string, unknown>, headerMap: Map<string, string>): CandidateMetadata {
+    return removeEmptyCandidateFields({
+      lastName: getFirstNonEmptyRecord(row, headerMap, ['nomdusage', 'nomusage', 'nom', 'lastname']),
+      firstName: getFirstNonEmptyRecord(row, headerMap, ['prenom', 'prenoms', 'firstname']),
+      cnu: getFirstNonEmptyRecord(row, headerMap, ['cnu', 'sectioncnu', 'section']),
+      grade: getFirstNonEmptyRecord(row, headerMap, ['grade', 'corpsgrade']),
+      composante: getFirstNonEmptyRecord(row, headerMap, ['composante', 'ufr']),
+      researchUnit: getFirstNonEmptyRecord(row, headerMap, [
+        'unitederecherche',
+        'uniterecherche',
+        'unite',
+        'laboratoire',
+        'ur',
+      ]),
+    });
+  }
+
+  private extractCandidateFromSpreadsheetRow(row: Map<string, string>): CandidateMetadata {
+    return removeEmptyCandidateFields({
+      lastName: getFirstNonEmpty(row, ['nomdusage', 'nomusage', 'nom', 'lastname']),
+      firstName: getFirstNonEmpty(row, ['prenom', 'prenoms', 'firstname']),
+      cnu: getFirstNonEmpty(row, ['cnu', 'sectioncnu', 'section']),
+      grade: getFirstNonEmpty(row, ['grade', 'corpsgrade']),
+      composante: getFirstNonEmpty(row, ['composante', 'ufr']),
+      researchUnit: getFirstNonEmpty(row, [
+        'unitederecherche',
+        'uniterecherche',
+        'unite',
+        'laboratoire',
+        'ur',
+      ]),
+    });
+  }
+
   private extractReviewersFromRow(row: Map<string, string>): string[] {
     const reviewers: string[] = [];
 
@@ -400,6 +474,42 @@ const getFirstNonEmpty = (row: Map<string, string>, keys: string[]): string => {
   }
   return '';
 };
+
+const getFirstNonEmptyRecord = (
+  row: Record<string, unknown>,
+  headerMap: Map<string, string>,
+  keys: string[],
+): string => {
+  for (const key of keys) {
+    const header = headerMap.get(key);
+    if (!header) {
+      continue;
+    }
+
+    const value = row[header]?.toString().trim() ?? '';
+    if (value !== '') {
+      return value;
+    }
+  }
+
+  return '';
+};
+
+const removeEmptyCandidateFields = (candidate: CandidateMetadata): CandidateMetadata => {
+  const cleaned: CandidateMetadata = {};
+
+  for (const [key, value] of Object.entries(candidate) as Array<[keyof CandidateMetadata, string | undefined]>) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      cleaned[key] = trimmed;
+    }
+  }
+
+  return cleaned;
+};
+
+const hasCandidateMetadata = (candidate: CandidateMetadata): boolean =>
+  Object.values(candidate).some((value) => Boolean(value?.trim()));
 
 const looksLikeNameReference = (value: string): boolean => {
   if (!value) {

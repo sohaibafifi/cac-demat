@@ -7,20 +7,30 @@ import {
   PipelineLogger,
   PreparationStats,
   PipelineProgress,
+  PreparationIssue,
 } from '../pdf/pdfPackageProcessor.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { ZipService, ZipTarget } from '../zip/zipService.js';
 import type { PdfRestrictionSelection, PipelineStageId } from './pipelineStages.js';
+import { DocxTemplateService } from '../docx/docxTemplateService.js';
+import { isPipelineCancelledError, throwIfPipelineCancelled } from './pipelineCancelledError.js';
+import type { CandidateMetadata } from '../assignments/csvAssignmentLoader.js';
 
 export interface ReviewerPackage {
   name: string;
   files: string[];
+  candidateMetadata?: Record<string, CandidateMetadata>;
+}
+
+interface NormalizedReviewerPackage extends PdfPackage {
+  candidateMetadata?: Record<string, CandidateMetadata>;
 }
 
 export class ReviewerPreparationService {
   constructor(
     private readonly packageProcessor: PdfPackageProcessor,
     private readonly zipService: ZipService,
+    private readonly docxTemplateService: DocxTemplateService,
   ) {}
 
   async prepare(
@@ -34,16 +44,18 @@ export class ReviewerPreparationService {
     zipEnabled = true,
     activeStages?: readonly PipelineStageId[],
     restrictionOptions?: PdfRestrictionSelection,
+    includeRipecReports = false,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
 
     const inventory = await this.packageProcessor.collectPdfFiles(resolvedSourceDir, abortSignal);
 
-    const normalisedPackages: PdfPackage[] = packages
+    const normalisedPackages: NormalizedReviewerPackage[] = packages
       .map((pkg) => ({
         name: pkg.name.trim(),
         files: pkg.files.map((f) => f.trim()).filter((f) => f),
+        ...(pkg.candidateMetadata ? { candidateMetadata: { ...pkg.candidateMetadata } } : {}),
       }))
       .filter((pkg) => pkg.name && pkg.files.length > 0);
 
@@ -82,6 +94,18 @@ export class ReviewerPreparationService {
       restrictionOptions,
     );
 
+    if (includeRipecReports) {
+      const issues = await this.addRipecReports(
+        normalisedPackages,
+        inventory,
+        outputDir,
+        collectionName,
+        logger,
+        abortSignal,
+      );
+      stats.errors.push(...issues);
+    }
+
     if (zipTargets.length > 0 && zipEnabled) {
       const zipResult = await this.zipService.zipAll(zipTargets, { logger, abortSignal, removeSource: true });
       for (const issue of zipResult.errors) {
@@ -96,12 +120,123 @@ export class ReviewerPreparationService {
     return stats;
   }
 
-  private buildZipTargets(packages: PdfPackage[], outputDir: string, collectionName: string): ZipTarget[] {
-    const uniqueTargets = new Map<string, ZipTarget>();
-    const collectionLabel = NameSanitizer.sanitizeForFileName(collectionName, 'collection');
+  private async addRipecReports(
+    packages: NormalizedReviewerPackage[],
+    inventory: PdfInventoryEntry[],
+    outputDir: string,
+    collectionName: string,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PreparationIssue[]> {
+    const errors: PreparationIssue[] = [];
+    const lookup = new Map(inventory.map((file) => [file.relative.toLowerCase(), file]));
+
+    for (const pkg of packages) {
+      throwIfPipelineCancelled(abortSignal);
+      const recipient = pkg.name.trim();
+      if (!recipient) continue;
+
+      const uniqueFiles = Array.from(new Set(pkg.files.map((file) => file.trim()).filter(Boolean)));
+      for (const requestedFile of uniqueFiles) {
+        throwIfPipelineCancelled(abortSignal);
+        const file = lookup.get(requestedFile.toLowerCase());
+        if (!file) {
+          continue;
+        }
+
+        try {
+          const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
+          const targetDirectory = file.relativeDir ? path.join(baseDir, file.relativeDir) : baseDir;
+          const candidate = this.resolveCandidateMetadata(pkg, file);
+          const targetName = this.resolveTargetName(file);
+          const generated = await this.docxTemplateService.createRipecReport({
+            targetName,
+            reviewerName: recipient,
+            candidate,
+            targetDirectory,
+          });
+
+          logger?.(`Document RIPEC généré pour ${recipient} / ${targetName}: ${path.basename(generated)}`);
+        } catch (error) {
+          if (isPipelineCancelledError(error)) {
+            throw error;
+          }
+
+          const message = error instanceof Error ? error.message : String(error);
+          errors.push({
+            recipient,
+            file: file.relative,
+            message,
+          });
+          logger?.(`Erreur lors de la génération des documents RIPEC pour ${recipient} / ${file.relative}: ${message}`);
+        }
+      }
+    }
+
+    return errors;
+  }
+
+  private resolveTargetName(file: PdfInventoryEntry): string {
+    const parsed = path.parse(file.basename);
+    return parsed.name || file.basename;
+  }
+
+  private resolveCandidateMetadata(pkg: NormalizedReviewerPackage, file: PdfInventoryEntry): CandidateMetadata {
+    const direct =
+      pkg.candidateMetadata?.[file.relative] ??
+      pkg.candidateMetadata?.[file.relative.toLowerCase()] ??
+      pkg.candidateMetadata?.[file.basename] ??
+      pkg.candidateMetadata?.[file.basename.toLowerCase()];
+
+    return this.mergeCandidateMetadata(this.deriveCandidateMetadataFromFile(file), direct);
+  }
+
+  private deriveCandidateMetadataFromFile(file: PdfInventoryEntry): CandidateMetadata {
+    const targetName = this.resolveTargetName(file)
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!targetName) {
+      return {};
+    }
+
+    const parts = targetName.split(' ').filter(Boolean);
+    if (parts.length < 2) {
+      return { lastName: targetName };
+    }
+
+    return {
+      lastName: parts[0],
+      firstName: parts.slice(1).join(' '),
+    };
+  }
+
+  private mergeCandidateMetadata(
+    base: CandidateMetadata | undefined,
+    next: CandidateMetadata | undefined,
+  ): CandidateMetadata {
+    return {
+      ...(base ?? {}),
+      ...Object.fromEntries(
+        Object.entries(next ?? {}).filter(([, value]) => typeof value === 'string' && value.trim() !== ''),
+      ),
+    };
+  }
+
+  private resolveRecipientBaseDir(recipient: string, outputDir: string, collectionName: string): string {
+    const folderName = NameSanitizer.sanitize(recipient, 'reviewer');
+    const recipientDir = path.join(outputDir, folderName);
     const collectionFolder = collectionName.trim()
       ? NameSanitizer.sanitize(collectionName, 'collection')
       : null;
+
+    return collectionFolder ? path.join(recipientDir, collectionFolder) : recipientDir;
+  }
+
+  private buildZipTargets(packages: PdfPackage[], outputDir: string, collectionName: string): ZipTarget[] {
+    const uniqueTargets = new Map<string, ZipTarget>();
+    const collectionLabel = NameSanitizer.sanitizeForFileName(collectionName, 'collection');
 
     for (const pkg of packages) {
       const recipient = pkg.name.trim();
@@ -109,7 +244,7 @@ export class ReviewerPreparationService {
 
       const folderName = NameSanitizer.sanitize(recipient, 'reviewer');
       const recipientDir = path.join(outputDir, folderName);
-      const baseDir = collectionFolder ? path.join(recipientDir, collectionFolder) : recipientDir;
+      const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
       const zipName = `${collectionLabel} - ${NameSanitizer.sanitizeForFileName(recipient, 'destinataire')}.zip`;
       const zipPath = path.join(recipientDir, zipName);
 

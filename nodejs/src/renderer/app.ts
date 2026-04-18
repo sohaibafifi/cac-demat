@@ -64,6 +64,7 @@ type CoordinatorState = {
   status: string;
   running: boolean;
   cacName: string;
+  cacType: 'avancement' | 'ripec';
   zipReviewersEnabled: boolean;
   zipMembersEnabled: boolean;
   pipelineStages: PipelineStageDefinition[];
@@ -255,6 +256,7 @@ const elements = {
   manualMembersList: document.getElementById('manual-members-list') as HTMLElement,
   membersSelected: document.getElementById('members-selected') as HTMLElement,
   cacNameInput: document.getElementById('cac-name') as HTMLInputElement,
+  cacTypeSelect: document.getElementById('cac-type') as HTMLSelectElement,
   manualReviewerFile: document.getElementById('manual-reviewer-file') as HTMLInputElement,
   manualReviewerNames: document.getElementById('manual-reviewer-names') as HTMLInputElement,
   manualMemberName: document.getElementById('manual-member-name') as HTMLInputElement,
@@ -352,13 +354,14 @@ function formatDuration(ms: number): string {
 }
 
 function setState(state: CoordinatorState): void {
-  const normalized = {
+  const normalized: CoordinatorState = {
     ...state,
     csvReviewers: [...(state.csvReviewers ?? [])],
     csvMembers: [...(state.csvMembers ?? [])],
     runErrors: [...(state.runErrors ?? [])],
     zipReviewersEnabled: state.zipReviewersEnabled !== undefined ? Boolean(state.zipReviewersEnabled) : true,
     zipMembersEnabled: state.zipMembersEnabled !== undefined ? Boolean(state.zipMembersEnabled) : true,
+    cacType: state.cacType === 'ripec' ? 'ripec' : 'avancement',
     pipelineStages: state.pipelineStages?.length ? state.pipelineStages : FALLBACK_PIPELINE_STAGES,
     reviewerStageSelection: normalizeStageSelection(state.reviewerStageSelection),
     memberStageSelection: normalizeStageSelection(state.memberStageSelection),
@@ -539,6 +542,7 @@ function updateActionStates(): void {
     elements.resetSession.disabled = true;
     elements.loadReviewersCsv.disabled = true;
     elements.loadMembersCsv.disabled = true;
+    elements.cacTypeSelect.disabled = true;
     elements.zipReviewersToggle.disabled = true;
     elements.zipMembersToggle.disabled = true;
     document.querySelectorAll<HTMLInputElement>('.stage-option input[type="checkbox"], .restriction-suboption input[type="checkbox"]').forEach((input) => {
@@ -569,6 +573,7 @@ function updateActionStates(): void {
   elements.resetSession.disabled = busy || state.running;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
+  elements.cacTypeSelect.disabled = busy || state.running;
   elements.zipReviewersToggle.disabled = busy || state.running;
   elements.zipMembersToggle.disabled = busy || state.running;
   const stageInputsDisabled = busy || state.running;
@@ -627,6 +632,9 @@ function render(): void {
 
   if (elements.cacNameInput.value !== currentState.cacName) {
     elements.cacNameInput.value = currentState.cacName;
+  }
+  if (elements.cacTypeSelect.value !== currentState.cacType) {
+    elements.cacTypeSelect.value = currentState.cacType;
   }
 
   elements.zipReviewersToggle.checked = Boolean(currentState.zipReviewersEnabled);
@@ -1457,6 +1465,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const value = (event.target as HTMLInputElement).value;
     await updateCoordinator(() => api.setCacName(value));
+  });
+
+  elements.cacTypeSelect.addEventListener('change', async (event) => {
+    const value = (event.target as HTMLSelectElement).value === 'ripec' ? 'ripec' : 'avancement';
+    const api = await getElectronApiOrWarn();
+    if (!api?.setCacType) {
+      return;
+    }
+
+    await updateCoordinator(() => api.setCacType(value));
   });
 
   elements.zipReviewersToggle.addEventListener('change', async (event) => {

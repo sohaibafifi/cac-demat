@@ -116,6 +116,7 @@
       }
 
       input[type="text"],
+      select,
       textarea {
         width: 100%;
         padding: 0.6rem 0.75rem;
@@ -155,6 +156,7 @@
       .section[data-hidden="true"] { display: none; }
 
       input[type="text"]:focus,
+      select:focus,
       textarea:focus {
         outline: none;
         border-color: rgba(59, 130, 246, 0.8);
@@ -623,7 +625,11 @@
           <div class="stack " >
             <span class="hint">Nom du CAC</span>
               <div class="row">
-            <input type="text" id="cac-name" placeholder="Ex : CAC 2025" />
+                <input type="text" id="cac-name" placeholder="Ex : CAC 2025" />
+                <select id="cac-type" aria-label="Type du CAC">
+                  <option value="avancement">Avancement</option>
+                  <option value="ripec">RIPEC</option>
+                </select>
               </div>
           </div>
           <div class="stack csv-block">

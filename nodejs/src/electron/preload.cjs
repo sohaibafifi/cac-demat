@@ -13,6 +13,7 @@ const api = {
   clearMembersCsv: () => ipcRenderer.invoke('coordinator:clear-members-csv'),
   resetSession: () => ipcRenderer.invoke('coordinator:reset-session'),
   setCacName: (name) => ipcRenderer.invoke('coordinator:set-cac-name', name),
+  setCacType: (type) => ipcRenderer.invoke('coordinator:set-cac-type', type),
   addManualReviewer: (payload) => ipcRenderer.invoke('coordinator:add-manual-reviewer', payload),
   removeManualReviewer: (index) => ipcRenderer.invoke('coordinator:remove-manual-reviewer', index),
   addManualMember: (name, files) => ipcRenderer.invoke('coordinator:add-manual-member', { name, files }),

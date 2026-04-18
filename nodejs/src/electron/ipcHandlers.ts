@@ -74,6 +74,12 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
+    this.ipcMain.handle('coordinator:set-cac-type', async (_event: IpcMainInvokeEvent, cacType: string) => {
+      const coordinator = this.getCoordinator();
+      coordinator.setCacType(cacType);
+      return serializeCoordinatorState(coordinator);
+    });
+
     this.ipcMain.handle('coordinator:set-zip-reviewers-enabled', async (_event: IpcMainInvokeEvent, enabled: boolean) => {
       const coordinator = this.getCoordinator();
       coordinator.setZipReviewersEnabled(Boolean(enabled));

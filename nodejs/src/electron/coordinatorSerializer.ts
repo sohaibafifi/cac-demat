@@ -25,6 +25,7 @@ export interface SerializedCoordinatorState {
   status: string;
   running: boolean;
   cacName: string;
+  cacType: 'avancement' | 'ripec';
   zipReviewersEnabled: boolean;
   zipMembersEnabled: boolean;
   pipelineStages: PipelineStageDefinition[];
@@ -110,6 +111,7 @@ export function serializeCoordinatorState(coordinator: DashboardCoordinator): Se
     status: coordinator.status,
     running: coordinator.running,
     cacName: coordinator.cacName,
+    cacType: coordinator.cacType,
     zipReviewersEnabled: coordinator.zipReviewersEnabled,
     zipMembersEnabled: coordinator.zipMembersEnabled,
     pipelineStages: coordinator.getPipelineStageDefinitions(),

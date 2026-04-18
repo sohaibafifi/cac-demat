@@ -17,6 +17,8 @@ const iconSourceDirs = [
 ];
 const iconFiles = ['icon.png', 'icon.ico', 'icon.icns'];
 const iconDstDir = path.join(projectRoot, 'dist', 'assets');
+const templatesSrcDir = path.join(projectRoot, 'templates');
+const templatesDstDir = path.join(projectRoot, 'dist', 'templates');
 
 const platform = process.platform; // 'darwin', 'win32', 'linux'
 const bundledNodeModules = ['xlsx', 'electron-updater'];
@@ -98,6 +100,21 @@ for (const iconFile of iconFiles) {
 
 if (copiedIcons === 0) {
   console.warn('[copy-electron-assets] No icon assets found; Electron will fall back to defaults.');
+}
+
+try {
+  if (fs.existsSync(templatesSrcDir)) {
+    fs.rmSync(templatesDstDir, { recursive: true, force: true });
+    copyDirectory(templatesSrcDir, templatesDstDir, (srcPath, entry) => {
+      if (entry.isDirectory()) {
+        return true;
+      }
+      return !path.basename(srcPath).startsWith('~$');
+    });
+    console.log('[copy-electron-assets] Copied document templates');
+  }
+} catch (err) {
+  console.error('[copy-electron-assets] Failed to copy document templates', err);
 }
 
 const copyNodeModule = (moduleName) => {

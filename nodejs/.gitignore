@@ -31,6 +31,7 @@ npm-debug.log*
 *.tmp
 .cache/
 test-data/generated/
+templates/~$*
 # Optimize npm installations
 package-lock=false
 save-exact=true

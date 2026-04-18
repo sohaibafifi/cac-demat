@@ -1,4 +1,10 @@
-import { CsvAssignmentLoader, MemberAssignment, ReviewerAssignment, PdfFileMatcher } from '../services/assignments/csvAssignmentLoader.js';
+import {
+  CsvAssignmentLoader,
+  CandidateMetadata,
+  MemberAssignment,
+  ReviewerAssignment,
+  PdfFileMatcher,
+} from '../services/assignments/csvAssignmentLoader.js';
 import { MemberPreparationService, MemberEntry } from '../services/pipeline/memberPreparationService.js';
 import { ReviewerPreparationService, ReviewerPackage } from '../services/pipeline/reviewerPreparationService.js';
 import { WorkspaceService, WorkspaceInventory } from '../services/workspace/workspaceService.js';
@@ -52,6 +58,7 @@ export interface ReviewerSummary {
 }
 
 export type RunMode = 'reviewers' | 'members';
+export type CacType = 'avancement' | 'ripec';
 
 export interface RunStats {
   runId: number;
@@ -91,6 +98,7 @@ export class DashboardCoordinator {
   status = 'En attente';
   running = false;
   cacName = '';
+  cacType: CacType = 'avancement';
   zipReviewersEnabled = true;
   zipMembersEnabled = true;
   reviewerStageSelection: PipelineStageSelection = createDefaultPipelineStageSelection();
@@ -180,6 +188,16 @@ export class DashboardCoordinator {
     const label = this.getRestrictionOptionLabel(optionId);
     const modeLabel = mode === 'reviewers' ? 'rapporteurs' : 'membres';
     this.appendLog(`${label} ${modeLabel} ${next ? 'activée' : 'désactivée'}.`);
+    this.emitChange();
+  }
+
+  setCacType(type: string): void {
+    if (this.running) {
+      return;
+    }
+
+    this.cacType = type === 'ripec' ? 'ripec' : 'avancement';
+    this.appendLog(`Type de CAC: ${this.cacType === 'ripec' ? 'RIPEC' : 'Avancement'}.`);
     this.emitChange();
   }
 
@@ -340,6 +358,7 @@ export class DashboardCoordinator {
     this.missingReviewerFiles = [];
     this.missingReviewerNames = [];
     this.cacName = '';
+    this.cacType = 'avancement';
     this.zipReviewersEnabled = true;
     this.zipMembersEnabled = true;
     this.reviewerStageSelection = createDefaultPipelineStageSelection();
@@ -503,12 +522,58 @@ export class DashboardCoordinator {
   }
 
   reviewerPackages(): ReviewerPackage[] {
+    const candidateMetadataByFile = this.buildReviewerCandidateMetadataMap();
+
     return this.getReviewerSummaries()
       .map((summary) => {
         const files = Array.from(new Set(summary.files.map((f) => f.name.trim()).filter(Boolean)));
-        return files.length > 0 ? { name: summary.name.trim(), files } : null;
+        const candidateMetadata: Record<string, CandidateMetadata> = {};
+
+        for (const file of files) {
+          const candidate = candidateMetadataByFile.get(file.toLowerCase());
+          if (candidate) {
+            candidateMetadata[file] = { ...candidate };
+            candidateMetadata[file.toLowerCase()] = { ...candidate };
+          }
+        }
+
+        return files.length > 0
+          ? {
+              name: summary.name.trim(),
+              files,
+              ...(Object.keys(candidateMetadata).length > 0 ? { candidateMetadata } : {}),
+            }
+          : null;
       })
       .filter((entry): entry is ReviewerPackage => entry !== null);
+  }
+
+  private buildReviewerCandidateMetadataMap(): Map<string, CandidateMetadata> {
+    const metadataByFile = new Map<string, CandidateMetadata>();
+
+    for (const assignment of this.reviewersFromCsv) {
+      const file = assignment.file.trim();
+      if (!file || !assignment.candidate) {
+        continue;
+      }
+
+      const key = file.toLowerCase();
+      metadataByFile.set(key, this.mergeCandidateMetadata(metadataByFile.get(key), assignment.candidate));
+    }
+
+    return metadataByFile;
+  }
+
+  private mergeCandidateMetadata(
+    base: CandidateMetadata | undefined,
+    next: CandidateMetadata | undefined,
+  ): CandidateMetadata {
+    return {
+      ...(base ?? {}),
+      ...Object.fromEntries(
+        Object.entries(next ?? {}).filter(([, value]) => typeof value === 'string' && value.trim() !== ''),
+      ),
+    };
   }
 
   combinedMembers(): MemberEntry[] {
@@ -575,6 +640,7 @@ export class DashboardCoordinator {
       this.lastReviewerOutputDir = outputDir;
       this.lastRunMode = 'reviewers';
       this.appendLog('Préparation des packages rapporteurs...');
+      this.appendLog(`Type de CAC: ${this.cacType === 'ripec' ? 'RIPEC' : 'Avancement'}.`);
       this.appendLog(`Étapes rapporteurs actives: ${this.formatActiveStages('reviewers')}.`);
       this.appendLog(`Sous-options Restrictions PDF rapporteurs: ${this.formatActiveRestrictions('reviewers')}.`);
 
@@ -589,6 +655,7 @@ export class DashboardCoordinator {
         this.zipReviewersEnabled,
         this.getActiveStageIds('reviewers'),
         { ...this.reviewerRestrictionSelection },
+        this.cacType === 'ripec',
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);
@@ -785,7 +852,12 @@ export class DashboardCoordinator {
   }
 
   private refreshReviewersFromImports(): void {
-    const merged = new Map<string, { file: string; reviewers: Set<string>; label?: string }>();
+    const merged = new Map<string, {
+      file: string;
+      reviewers: Set<string>;
+      label?: string;
+      candidate?: CandidateMetadata;
+    }>();
 
     const assignments = this.csvReviewers.flatMap((file) => this.reviewerImports.get(file) ?? []);
 
@@ -811,6 +883,8 @@ export class DashboardCoordinator {
       if (!entry.label && assignment.label) {
         entry.label = assignment.label;
       }
+
+      entry.candidate = this.mergeCandidateMetadata(entry.candidate, assignment.candidate);
     }
 
     this.reviewersFromCsv = Array.from(merged.values()).map((entry) => ({
@@ -818,6 +892,7 @@ export class DashboardCoordinator {
       reviewers: Array.from(entry.reviewers),
       source: 'csv' as const,
       label: entry.label,
+      ...(entry.candidate && Object.keys(entry.candidate).length > 0 ? { candidate: entry.candidate } : {}),
     }));
   }
 
