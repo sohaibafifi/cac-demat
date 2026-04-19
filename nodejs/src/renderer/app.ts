@@ -91,6 +91,23 @@ type CoordinatorState = {
   progress: PipelineProgressState;
 };
 
+type ReviewerDepositReportGenerationResult = {
+  rootDir: string;
+  reportPath: string;
+  generatedAt: string;
+  summary: {
+    reviewers: number;
+    expectedReports: number;
+    receivedReports: number;
+    matchedReports: number;
+    probableReports: number;
+    missingReports: number;
+    extraDeposits: number;
+    unreadableZips: number;
+    directDirectoriesWithoutZip: number;
+  };
+};
+
 declare global {
   interface Window {
     electronAPI?: ElectronApi;
@@ -234,12 +251,13 @@ const getElectronApiOrWarn = async (): Promise<ElectronApi | null> => {
 
 let currentState: CoordinatorState | null = null;
 let busy = false;
-let assignmentTab: 'reviewers' | 'members' = 'reviewers';
+let assignmentTab: 'reviewers' | 'members' | 'reporting' = 'reviewers';
 let advancedMode = false;
 let lastRunNotificationId: number | null = null;
 let progressStartedAt: number | null = null;
 let lastProgressElapsedMs: number | null = null;
 let progressTickerId: number | null = null;
+let lastReviewerReportingPath: string | null = null;
 
 const elements = {
   folderPath: document.getElementById('folder-path') as HTMLElement,
@@ -281,6 +299,9 @@ const elements = {
   manualMemberForm: document.getElementById('manual-member-form') as HTMLFormElement,
   openOutputReviewers: document.getElementById('open-output-reviewers') as HTMLButtonElement,
   openOutputMembers: document.getElementById('open-output-members') as HTMLButtonElement,
+  generateReviewerReporting: document.getElementById('generate-reviewer-reporting') as HTMLButtonElement,
+  openReviewerReporting: document.getElementById('open-reviewer-reporting') as HTMLButtonElement,
+  reviewerReportingResult: document.getElementById('reviewer-reporting-result') as HTMLElement,
   toggleManualReviewers: document.getElementById('toggle-manual-reviewers') as HTMLButtonElement,
   toggleReviewerSummaries: document.getElementById('toggle-reviewer-summaries') as HTMLButtonElement,
   toggleMissingFiles: document.getElementById('toggle-missing-files') as HTMLButtonElement,
@@ -289,8 +310,12 @@ const elements = {
   toggleLog: document.getElementById('toggle-log') as HTMLButtonElement,
   tabReviewers: document.getElementById('tab-reviewers') as HTMLButtonElement,
   tabMembers: document.getElementById('tab-members') as HTMLButtonElement,
+  tabReporting: document.getElementById('tab-reporting') as HTMLButtonElement,
+  sectionGeneralInfo: document.getElementById('section-general-info') as HTMLElement,
   sectionReviewers: document.getElementById('section-reviewers') as HTMLElement,
   sectionMembers: document.getElementById('section-members') as HTMLElement,
+  sectionReporting: document.getElementById('section-reporting') as HTMLElement,
+  sectionActivity: document.getElementById('section-activity') as HTMLElement,
   appVersion: document.getElementById('app-version') as HTMLElement | null,
   progressContainer: document.getElementById('progress-card') as HTMLElement,
   progressFill: document.getElementById('progress-fill') as HTMLElement,
@@ -542,6 +567,8 @@ function updateActionStates(): void {
     elements.resetSession.disabled = true;
     elements.loadReviewersCsv.disabled = true;
     elements.loadMembersCsv.disabled = true;
+    elements.generateReviewerReporting.disabled = true;
+    elements.openReviewerReporting.disabled = true;
     elements.cacTypeSelect.disabled = true;
     elements.zipReviewersToggle.disabled = true;
     elements.zipMembersToggle.disabled = true;
@@ -573,6 +600,8 @@ function updateActionStates(): void {
   elements.resetSession.disabled = busy || state.running;
   elements.loadReviewersCsv.disabled = busy;
   elements.loadMembersCsv.disabled = busy;
+  elements.generateReviewerReporting.disabled = busy || state.running;
+  elements.openReviewerReporting.disabled = busy || !lastReviewerReportingPath;
   elements.cacTypeSelect.disabled = busy || state.running;
   elements.zipReviewersToggle.disabled = busy || state.running;
   elements.zipMembersToggle.disabled = busy || state.running;
@@ -880,6 +909,16 @@ function renderRunErrors(): void {
   output.textContent = runErrors.join('\n\n');
 }
 
+function renderReviewerReportingResult(result: ReviewerDepositReportGenerationResult): void {
+  const summary = result.summary;
+  const target = elements.reviewerReportingResult;
+  target.dataset.empty = 'false';
+  target.textContent = [
+    `Fichier généré : ${result.reportPath}`,
+    `${summary.receivedReports}/${summary.expectedReports} dépôt(s) rattaché(s), ${summary.missingReports} manquant(s), ${summary.probableReports + summary.extraDeposits} point(s) à vérifier.`,
+  ].join('\n');
+}
+
 function populateAvailableFiles(): void {
   if (!currentState) return;
   const datalist = document.getElementById('available-files') as HTMLDataListElement | null;
@@ -929,12 +968,19 @@ function applyCollapsed(): void {
 
 function renderTabs(): void {
   const isReviewers = assignmentTab === 'reviewers';
+  const isMembers = assignmentTab === 'members';
+  const isReporting = assignmentTab === 'reporting';
   elements.tabReviewers.classList.toggle('active', isReviewers);
-  elements.tabMembers.classList.toggle('active', !isReviewers);
+  elements.tabMembers.classList.toggle('active', isMembers);
+  elements.tabReporting.classList.toggle('active', isReporting);
   elements.tabReviewers.setAttribute('aria-selected', String(isReviewers));
-  elements.tabMembers.setAttribute('aria-selected', String(!isReviewers));
+  elements.tabMembers.setAttribute('aria-selected', String(isMembers));
+  elements.tabReporting.setAttribute('aria-selected', String(isReporting));
   elements.sectionReviewers.setAttribute('data-hidden', isReviewers ? 'false' : 'true');
-  elements.sectionMembers.setAttribute('data-hidden', isReviewers ? 'true' : 'false');
+  elements.sectionMembers.setAttribute('data-hidden', isMembers ? 'false' : 'true');
+  elements.sectionReporting.setAttribute('data-hidden', isReporting ? 'false' : 'true');
+  elements.sectionGeneralInfo.setAttribute('data-hidden', isReporting ? 'true' : 'false');
+  elements.sectionActivity.setAttribute('data-hidden', isReporting ? 'true' : 'false');
 }
 
 
@@ -1738,12 +1784,59 @@ document.addEventListener('DOMContentLoaded', () => {
     await api.openPath(last);
   });
 
+  elements.generateReviewerReporting.addEventListener('click', async () => {
+    const api = await getElectronApiOrWarn();
+    if (!api?.selectFolder || !api.generateReviewerDepositReport) {
+      return;
+    }
+
+    const selected = await api.selectFolder();
+    if (!selected) {
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const result = await api.generateReviewerDepositReport(selected) as ReviewerDepositReportGenerationResult;
+      lastReviewerReportingPath = result.reportPath;
+      renderReviewerReportingResult(result);
+      updateActionStates();
+
+      if (api.openPath) {
+        await api.openPath(result.reportPath);
+      }
+    } catch (error) {
+      console.error(error);
+      alert(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  elements.openReviewerReporting.addEventListener('click', async () => {
+    const api = await resolveElectronApi();
+    if (!api?.openPath || !lastReviewerReportingPath) {
+      return;
+    }
+
+    try {
+      await api.openPath(lastReviewerReportingPath);
+    } catch (error) {
+      console.error(error);
+      alert(formatError(error));
+    }
+  });
+
   elements.tabReviewers.addEventListener('click', () => {
     assignmentTab = 'reviewers';
     renderTabs();
   });
   elements.tabMembers.addEventListener('click', () => {
     assignmentTab = 'members';
+    renderTabs();
+  });
+  elements.tabReporting.addEventListener('click', () => {
+    assignmentTab = 'reporting';
     renderTabs();
   });
 

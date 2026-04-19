@@ -37,6 +37,8 @@ const api = {
   runPipeline: (mode: 'reviewers' | 'members') =>
     ipcRenderer.invoke('coordinator:run', mode) as Promise<any>,
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop') as Promise<any>,
+  generateReviewerDepositReport: (rootDir: string) =>
+    ipcRenderer.invoke('reporting:generate-reviewer-deposits', rootDir) as Promise<any>,
   openPath: (filePath: string) => ipcRenderer.invoke('coordinator:open-path', filePath) as Promise<boolean>,
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode') as Promise<boolean>,
   getAppVersion: () => ipcRenderer.invoke('system:get-version') as Promise<string>,

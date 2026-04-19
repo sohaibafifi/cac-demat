@@ -25,6 +25,7 @@ const api = {
   setPdfRestrictionOptionEnabled: (payload) => ipcRenderer.invoke('coordinator:set-restriction-option-enabled', payload),
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop'),
+  generateReviewerDepositReport: (rootDir) => ipcRenderer.invoke('reporting:generate-reviewer-deposits', rootDir),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),
   getAppVersion: () => ipcRenderer.invoke('system:get-version'),

@@ -2,6 +2,7 @@ import type { IpcMain, IpcMainInvokeEvent, Dialog, Shell, OpenDialogOptions, Mes
 import { BrowserWindow } from 'electron';
 import type { DashboardCoordinator, ProgressState } from '../app/dashboardCoordinator.js';
 import { serializeCoordinatorState } from './coordinatorSerializer.js';
+import { ReviewerDepositReportService } from '../services/reporting/reviewerDepositReportService.js';
 
 export class IpcHandlerRegistry {
   constructor(
@@ -14,10 +15,12 @@ export class IpcHandlerRegistry {
   ) {}
   private coordinatorUnsubscribe: (() => void) | null = null;
   private coordinatorProgressUnsubscribe: (() => void) | null = null;
+  private readonly reviewerDepositReportService = new ReviewerDepositReportService();
 
   registerAll(): void {
     this.registerCoordinatorHandlers();
     this.registerDialogHandlers();
+    this.registerReportingHandlers();
     this.registerSystemHandlers();
   }
 
@@ -183,6 +186,12 @@ export class IpcHandlerRegistry {
       return parent
         ? this.dialog.showMessageBox(parent, options)
         : this.dialog.showMessageBox(options);
+    });
+  }
+
+  private registerReportingHandlers(): void {
+    this.ipcMain.handle('reporting:generate-reviewer-deposits', async (_event: IpcMainInvokeEvent, rootDir: string) => {
+      return this.reviewerDepositReportService.generate(rootDir);
     });
   }
 

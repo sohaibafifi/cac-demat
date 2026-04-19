@@ -88,6 +88,20 @@ Une fois les attributions configurées :
 4.  À la fin, un message vous confirme le nombre de dossiers générés.
 5.  Cliquez sur **"Ouvrir le dossier de sortie"** pour vérifier le résultat.
 
+## Reporting des Dépôts Rapporteurs
+
+Après partage des répertoires sur ownCloud, chaque rapporteur peut déposer son rapport PDF ou DOCX à côté de son archive ZIP.
+
+Pour générer le suivi :
+
+1.  Ouvrez l'onglet **Reporting**, puis cliquez sur **"Générer le reporting"**.
+2.  Sélectionnez le dossier ownCloud qui contient les répertoires des rapporteurs.
+3.  L'application inspecte chaque ZIP pour déduire les rapports attendus, puis repère les fichiers PDF ou DOCX déposés dans le même répertoire que le ZIP.
+4.  Un fichier HTML `reporting-depots-rapporteurs-...html` est sauvegardé dans le dossier analysé et ouvert automatiquement.
+5.  Dans le reporting, utilisez **"Imprimer ou enregistrer en PDF"** pour produire une version imprimable ou archivable.
+
+Le reporting indique, pour chaque rapporteur, les rapports déposés, la date du dernier dépôt avec une indication relative, les dépôts à vérifier lorsque le nom du fichier ne permet pas un rattachement certain, et les rapports encore manquants.
+
 ---
 
 # Gestion des Membres
