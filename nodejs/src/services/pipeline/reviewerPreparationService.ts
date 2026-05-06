@@ -44,7 +44,7 @@ export class ReviewerPreparationService {
     zipEnabled = true,
     activeStages?: readonly PipelineStageId[],
     restrictionOptions?: PdfRestrictionSelection,
-    includeRipecReports = false,
+    cacType: 'ripec' | 'avancement' | null = null,
   ): Promise<PreparationStats> {
     const resolvedSourceDir = await realpath(sourceDir);
     await mkdir(outputDir, { recursive: true, mode: 0o755 });
@@ -94,8 +94,18 @@ export class ReviewerPreparationService {
       restrictionOptions,
     );
 
-    if (includeRipecReports) {
+    if (cacType === 'ripec') {
       const issues = await this.addRipecReports(
+        normalisedPackages,
+        inventory,
+        outputDir,
+        collectionName,
+        logger,
+        abortSignal,
+      );
+      stats.errors.push(...issues);
+    } else if (cacType === 'avancement') {
+      const issues = await this.addAvancementReports(
         normalisedPackages,
         inventory,
         outputDir,
@@ -174,6 +184,93 @@ export class ReviewerPreparationService {
     }
 
     return errors;
+  }
+
+  private async addAvancementReports(
+    packages: NormalizedReviewerPackage[],
+    inventory: PdfInventoryEntry[],
+    outputDir: string,
+    collectionName: string,
+    logger?: PipelineLogger,
+    abortSignal?: AbortSignal,
+  ): Promise<PreparationIssue[]> {
+    const errors: PreparationIssue[] = [];
+    const lookup = new Map(inventory.map((file) => [file.relative.toLowerCase(), file]));
+    const reviewerNumbersByFile = this.computeReviewerNumbersByFile(packages);
+
+    for (const pkg of packages) {
+      throwIfPipelineCancelled(abortSignal);
+      const recipient = pkg.name.trim();
+      if (!recipient) continue;
+
+      const uniqueFiles = Array.from(new Set(pkg.files.map((file) => file.trim()).filter(Boolean)));
+      for (const requestedFile of uniqueFiles) {
+        throwIfPipelineCancelled(abortSignal);
+        const file = lookup.get(requestedFile.toLowerCase());
+        if (!file) {
+          continue;
+        }
+
+        const reviewerNumber = reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ?? 1;
+
+        try {
+          const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
+          const targetDirectory = file.relativeDir ? path.join(baseDir, file.relativeDir) : baseDir;
+          const candidate = this.resolveCandidateMetadata(pkg, file);
+          const targetName = this.resolveTargetName(file);
+          const generated = await this.docxTemplateService.createAvancementReports({
+            targetName,
+            reviewerName: recipient,
+            reviewerNumber,
+            candidate,
+            targetDirectory,
+          });
+
+          const fileNames = generated.map((generatedPath) => path.basename(generatedPath)).join(', ');
+          logger?.(`Documents Avancement générés pour ${recipient} / ${targetName}: ${fileNames}`);
+        } catch (error) {
+          if (isPipelineCancelledError(error)) {
+            throw error;
+          }
+
+          const message = error instanceof Error ? error.message : String(error);
+          errors.push({
+            recipient,
+            file: file.relative,
+            message,
+          });
+          logger?.(`Erreur lors de la génération des documents Avancement pour ${recipient} / ${file.relative}: ${message}`);
+        }
+      }
+    }
+
+    return errors;
+  }
+
+  private computeReviewerNumbersByFile(
+    packages: NormalizedReviewerPackage[],
+  ): Map<string, Map<string, number>> {
+    const result = new Map<string, Map<string, number>>();
+
+    for (const pkg of packages) {
+      const recipient = pkg.name.trim();
+      if (!recipient) continue;
+
+      const uniqueFiles = Array.from(new Set(pkg.files.map((file) => file.trim()).filter(Boolean)));
+      for (const file of uniqueFiles) {
+        const key = file.toLowerCase();
+        let reviewerMap = result.get(key);
+        if (!reviewerMap) {
+          reviewerMap = new Map<string, number>();
+          result.set(key, reviewerMap);
+        }
+        if (!reviewerMap.has(recipient)) {
+          reviewerMap.set(recipient, reviewerMap.size + 1);
+        }
+      }
+    }
+
+    return result;
   }
 
   private resolveTargetName(file: PdfInventoryEntry): string {

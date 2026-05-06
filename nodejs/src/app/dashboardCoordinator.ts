@@ -666,7 +666,7 @@ export class DashboardCoordinator {
         this.zipReviewersEnabled,
         this.getActiveStageIds('reviewers'),
         { ...this.reviewerRestrictionSelection },
-        this.cacType === 'ripec',
+        this.cacType,
       );
 
       this.appendLog(`Dossier de sortie: ${outputDir}`);

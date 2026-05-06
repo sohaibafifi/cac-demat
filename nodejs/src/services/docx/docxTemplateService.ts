@@ -34,9 +34,19 @@ export interface RipecTemplateCopy {
   targetDirectory: string;
 }
 
+export interface AvancementTemplateCopy {
+  targetName: string;
+  reviewerName: string;
+  reviewerNumber: number;
+  candidate?: CandidateMetadata;
+  targetDirectory: string;
+}
+
 const DOCUMENT_XML_PATH = 'word/document.xml';
 const TEMPLATE_REVIEWER_LABEL = 'rapporteur 1';
 const SPLIT_REVIEWER_LABEL_PATTERN = /<w:t>rapporteur<\/w:t>((?:(?!<w:t>rapporteur<\/w:t>)[\s\S]){0,500}?)<w:t>1<\/w:t>/;
+const AVANCEMENT_TITLE_TOKEN = '<w:t>Rapport de</w:t>';
+const AVANCEMENT_SIGNATURE_PHRASE = 'Signature du rapporteur';
 
 export class DocxTemplateService {
   async createRipecReport(copy: RipecTemplateCopy): Promise<string> {
@@ -50,6 +60,86 @@ export class DocxTemplateService {
     await writeFile(reviewerPath, this.renderDocx(template, copy.reviewerName, copy.candidate ?? {}));
 
     return reviewerPath;
+  }
+
+  async createAvancementReports(copy: AvancementTemplateCopy): Promise<string[]> {
+    const templatePath = await this.resolveAvancementTemplatePath();
+    const template = await readFile(templatePath);
+    const targetName = this.sanitizeFilePart(copy.targetName);
+    const anonymousLabel = `Rapporteur #${copy.reviewerNumber}`;
+    const anonymousFileLabel = `Rapporteur ${copy.reviewerNumber}`;
+    const candidate = copy.candidate ?? {};
+
+    await mkdir(copy.targetDirectory, { recursive: true, mode: 0o755 });
+
+    const anonymousPath = path.join(
+      copy.targetDirectory,
+      `Rapport Avancement - ${targetName} - ${this.sanitizeFilePart(anonymousFileLabel)}.docx`,
+    );
+    const namedPath = path.join(
+      copy.targetDirectory,
+      `Rapport Avancement - ${targetName} - ${this.sanitizeFilePart(copy.reviewerName)}.docx`,
+    );
+
+    await writeFile(anonymousPath, this.renderAvancementDocx(template, anonymousLabel, candidate, true));
+    await writeFile(namedPath, this.renderAvancementDocx(template, copy.reviewerName, candidate, false));
+
+    return [anonymousPath, namedPath];
+  }
+
+  private renderAvancementDocx(
+    template: Buffer,
+    reviewerLabel: string,
+    candidate: CandidateMetadata,
+    anonymous: boolean,
+  ): Buffer {
+    const entries = this.readZipEntries(template);
+    const outputEntries = entries.map((entry) => {
+      const data = this.readEntryData(template, entry);
+      if (entry.name !== DOCUMENT_XML_PATH) {
+        return { name: entry.name, data };
+      }
+
+      const xml = data.toString('utf8');
+      const replacement = this.escapeXmlText(reviewerLabel);
+      let updated = this.insertAvancementReviewerLabel(xml, replacement);
+      updated = this.fillCandidateFields(updated, candidate);
+      if (anonymous) {
+        updated = this.removeAvancementSignaturePhrase(updated);
+      }
+      return { name: entry.name, data: Buffer.from(updated, 'utf8') };
+    });
+
+    return this.writeZipEntries(outputEntries);
+  }
+
+  private insertAvancementReviewerLabel(xml: string, replacement: string): string {
+    if (!xml.includes(AVANCEMENT_TITLE_TOKEN)) {
+      throw new Error('Titre "Rapport de" introuvable dans le template Avancement.');
+    }
+
+    return xml.replace(
+      AVANCEMENT_TITLE_TOKEN,
+      `<w:t xml:space="preserve">Rapport de ${replacement}</w:t>`,
+    );
+  }
+
+  private removeAvancementSignaturePhrase(xml: string): string {
+    return this.updateParagraphs(xml, (paragraph) => {
+      if (!paragraph.includes(AVANCEMENT_SIGNATURE_PHRASE)) {
+        return paragraph;
+      }
+
+      let updated = paragraph.replace(
+        /<w:t(?:\s[^>]*)?>[^<]*Signature du rapporteur<\/w:t>/,
+        '<w:t>Date</w:t>',
+      );
+      updated = updated.replace(
+        /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t(?:\s[^>]*)?>\s*:\s*<\/w:t>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/,
+        '',
+      );
+      return updated;
+    });
   }
 
   private renderDocx(template: Buffer, reviewerLabel: string, candidate: CandidateMetadata): Buffer {
@@ -345,12 +435,23 @@ export class DocxTemplateService {
   }
 
   private async resolveRipecTemplatePath(): Promise<string> {
+    return this.resolveTemplatePath('ripec.docx', 'Template RIPEC introuvable (nodejs/templates/ripec.docx).');
+  }
+
+  private async resolveAvancementTemplatePath(): Promise<string> {
+    return this.resolveTemplatePath(
+      'avancement.docx',
+      'Template Avancement introuvable (nodejs/templates/avancement.docx).',
+    );
+  }
+
+  private async resolveTemplatePath(fileName: string, errorMessage: string): Promise<string> {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
-      path.join(currentDir, '..', '..', 'templates', 'ripec.docx'),
-      path.join(process.cwd(), 'dist', 'templates', 'ripec.docx'),
-      path.join(process.cwd(), 'templates', 'ripec.docx'),
-      path.join(process.resourcesPath ?? '', 'dist', 'templates', 'ripec.docx'),
+      path.join(currentDir, '..', '..', 'templates', fileName),
+      path.join(process.cwd(), 'dist', 'templates', fileName),
+      path.join(process.cwd(), 'templates', fileName),
+      path.join(process.resourcesPath ?? '', 'dist', 'templates', fileName),
     ];
 
     for (const candidate of candidates) {
@@ -362,7 +463,7 @@ export class DocxTemplateService {
       }
     }
 
-    throw new Error('Template RIPEC introuvable (nodejs/templates/ripec.docx).');
+    throw new Error(errorMessage);
   }
 
   private sanitizeFilePart(value: string): string {
