@@ -91,7 +91,10 @@ const MAX_SCAN_DEPTH = 5;
 const REPORT_EXTENSIONS = new Set(['.docx', '.pdf']);
 const EXPECTED_PDF_EXTENSIONS = new Set(['.pdf']);
 const RIPEC_REPORT_PREFIX = 'rapport ripec -';
+const AVANCEMENT_REPORT_PREFIX = 'rapport avancement -';
+const REPORT_PREFIXES = [RIPEC_REPORT_PREFIX, AVANCEMENT_REPORT_PREFIX];
 const MATCH_STOP_WORDS = new Set([
+  'avancement',
   'avis',
   'candidat',
   'candidate',
@@ -303,14 +306,19 @@ export class ReviewerDepositReportService {
       .filter((entryName) => this.isUsefulZipFileEntry(entryName));
 
     const ripecReports = fileEntries.filter((entryName) => this.isRipecReportEntry(entryName));
+    const avancementReports = fileEntries.filter((entryName) => this.isAvancementReportEntry(entryName));
     const sourceEntries = ripecReports.length > 0
       ? ripecReports
-      : fileEntries.filter((entryName) => EXPECTED_PDF_EXTENSIONS.has(path.posix.extname(entryName).toLowerCase()));
+      : avancementReports.length > 0
+        ? avancementReports
+        : fileEntries.filter((entryName) => EXPECTED_PDF_EXTENSIONS.has(path.posix.extname(entryName).toLowerCase()));
 
     return sourceEntries.map((entryName) => {
       const label = ripecReports.length > 0
         ? this.resolveRipecReportLabel(entryName, reviewerName)
-        : this.resolveSourcePdfLabel(entryName);
+        : avancementReports.length > 0
+          ? this.resolveAvancementReportLabel(entryName, reviewerName)
+          : this.resolveSourcePdfLabel(entryName);
       const normalized = this.normalizeForMatch(label);
 
       return {
@@ -524,6 +532,27 @@ export class ReviewerDepositReportService {
     return this.cleanLabel(label);
   }
 
+  private resolveAvancementReportLabel(entryName: string, reviewerName: string): string {
+    const baseName = this.removeExtension(path.posix.basename(entryName));
+    const trimmed = baseName.replace(/^rapport\s+avancement\s*-\s*/i, '').trim() || baseName;
+    const parts = trimmed.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+
+    if (parts.length === 0) {
+      return this.cleanLabel(trimmed);
+    }
+
+    const last = parts[parts.length - 1];
+    const isReviewer = this.normalizeForMatch(last) === this.normalizeForMatch(reviewerName);
+    const isAnonymous = /^rapporteur\s*#?\s*\d+$/i.test(last);
+
+    const target = (isReviewer || isAnonymous) && parts.length >= 2
+      ? parts.slice(0, -1).join(' - ')
+      : trimmed;
+    const variant = isAnonymous ? ' (anonyme)' : isReviewer ? ' (nominatif)' : '';
+
+    return `${this.cleanLabel(target)}${variant}`;
+  }
+
   private resolveSourcePdfLabel(entryName: string): string {
     return this.cleanLabel(this.removeExtension(path.posix.basename(entryName)));
   }
@@ -545,11 +574,14 @@ export class ReviewerDepositReportService {
   }
 
   private tokenize(value: string): string[] {
-    return this.removeExtension(value)
+    let normalized = this.removeExtension(value)
       .normalize('NFD')
       .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .replace(RIPEC_REPORT_PREFIX, ' ')
+      .toLowerCase();
+    for (const prefix of REPORT_PREFIXES) {
+      normalized = normalized.replace(prefix, ' ');
+    }
+    return normalized
       .replace(/[^a-z0-9]+/g, ' ')
       .split(/\s+/)
       .map((token) => token.trim())
@@ -578,6 +610,11 @@ export class ReviewerDepositReportService {
   private isRipecReportEntry(entryName: string): boolean {
     const baseName = path.posix.basename(entryName).toLowerCase();
     return path.posix.extname(baseName) === '.docx' && baseName.startsWith(RIPEC_REPORT_PREFIX);
+  }
+
+  private isAvancementReportEntry(entryName: string): boolean {
+    const baseName = path.posix.basename(entryName).toLowerCase();
+    return path.posix.extname(baseName) === '.docx' && baseName.startsWith(AVANCEMENT_REPORT_PREFIX);
   }
 
   private isReportDepositFile(fileName: string): boolean {
