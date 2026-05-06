@@ -167,6 +167,12 @@ export class DashboardCoordinator {
     }
 
     selection[stageId] = next;
+    if (stageId === 'restriction') {
+      const restrictionSelection = this.getRestrictionSelection(mode);
+      for (const option of PDF_RESTRICTION_OPTION_DEFINITIONS) {
+        restrictionSelection[option.id] = next;
+      }
+    }
     const label = this.getStageLabel(stageId);
     const modeLabel = mode === 'reviewers' ? 'rapporteurs' : 'membres';
     this.appendLog(`${label} ${modeLabel} ${next ? 'activé' : 'désactivé'}.`);
@@ -185,6 +191,11 @@ export class DashboardCoordinator {
     }
 
     selection[optionId] = next;
+    const stageSelection = this.getStageSelection(mode);
+    const anyOptionEnabled = PDF_RESTRICTION_OPTION_DEFINITIONS.some((option) => selection[option.id]);
+    if (!anyOptionEnabled && stageSelection.restriction) {
+      stageSelection.restriction = false;
+    }
     const label = this.getRestrictionOptionLabel(optionId);
     const modeLabel = mode === 'reviewers' ? 'rapporteurs' : 'membres';
     this.appendLog(`${label} ${modeLabel} ${next ? 'activée' : 'désactivée'}.`);
