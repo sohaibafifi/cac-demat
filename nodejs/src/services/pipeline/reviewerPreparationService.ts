@@ -140,6 +140,7 @@ export class ReviewerPreparationService {
   ): Promise<PreparationIssue[]> {
     const errors: PreparationIssue[] = [];
     const lookup = new Map(inventory.map((file) => [file.relative.toLowerCase(), file]));
+    const reviewerNumbersByFile = this.computeReviewerNumbersByFile(packages);
 
     for (const pkg of packages) {
       throwIfPipelineCancelled(abortSignal);
@@ -154,6 +155,8 @@ export class ReviewerPreparationService {
           continue;
         }
 
+        const reviewerNumber = reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ?? 1;
+
         try {
           const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
           const targetDirectory = file.relativeDir ? path.join(baseDir, file.relativeDir) : baseDir;
@@ -162,11 +165,13 @@ export class ReviewerPreparationService {
           const generated = await this.docxTemplateService.createRipecReport({
             targetName,
             reviewerName: recipient,
+            reviewerNumber,
             candidate,
             targetDirectory,
           });
 
-          logger?.(`Document RIPEC généré pour ${recipient} / ${targetName}: ${path.basename(generated)}`);
+          const fileNames = generated.map((generatedPath) => path.basename(generatedPath)).join(', ');
+          logger?.(`Documents RIPEC générés pour ${recipient} / ${targetName}: ${fileNames}`);
         } catch (error) {
           if (isPipelineCancelledError(error)) {
             throw error;

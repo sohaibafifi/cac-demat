@@ -522,14 +522,23 @@ export class ReviewerDepositReportService {
 
   private resolveRipecReportLabel(entryName: string, reviewerName: string): string {
     const baseName = this.removeExtension(path.posix.basename(entryName));
-    let label = baseName.replace(/^rapport\s+ripec\s*-\s*/i, '').trim() || baseName;
-    const parts = label.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+    const trimmed = baseName.replace(/^rapport\s+ripec\s*-\s*/i, '').trim() || baseName;
+    const parts = trimmed.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
 
-    if (parts.length >= 2 && this.normalizeForMatch(parts[parts.length - 1]) === this.normalizeForMatch(reviewerName)) {
-      label = parts.slice(0, -1).join(' - ');
+    if (parts.length === 0) {
+      return this.cleanLabel(trimmed);
     }
 
-    return this.cleanLabel(label);
+    const last = parts[parts.length - 1];
+    const isReviewer = this.normalizeForMatch(last) === this.normalizeForMatch(reviewerName);
+    const isAnonymous = /^rapporteur\s*#?\s*\d+$/i.test(last);
+
+    const target = (isReviewer || isAnonymous) && parts.length >= 2
+      ? parts.slice(0, -1).join(' - ')
+      : trimmed;
+    const variant = isAnonymous ? ' (anonyme)' : isReviewer ? ' (nominatif)' : '';
+
+    return `${this.cleanLabel(target)}${variant}`;
   }
 
   private resolveAvancementReportLabel(entryName: string, reviewerName: string): string {

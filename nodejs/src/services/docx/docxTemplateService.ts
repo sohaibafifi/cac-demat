@@ -30,6 +30,7 @@ interface TextToken {
 export interface RipecTemplateCopy {
   targetName: string;
   reviewerName: string;
+  reviewerNumber: number;
   candidate?: CandidateMetadata;
   targetDirectory: string;
 }
@@ -47,19 +48,32 @@ const TEMPLATE_REVIEWER_LABEL = 'rapporteur 1';
 const SPLIT_REVIEWER_LABEL_PATTERN = /<w:t>rapporteur<\/w:t>((?:(?!<w:t>rapporteur<\/w:t>)[\s\S]){0,500}?)<w:t>1<\/w:t>/;
 const AVANCEMENT_TITLE_TOKEN = '<w:t>Rapport de</w:t>';
 const AVANCEMENT_SIGNATURE_PHRASE = 'Signature du rapporteur';
+const RIPEC_SIGNATURE_PHRASE = 'Signature';
+const RIPEC_TITLE_PATTERN = /(<w:t>Rapport<\/w:t>(?:(?!<w:t>)[\s\S]){0,300}?<w:t)>de<\/w:t>/;
 
 export class DocxTemplateService {
-  async createRipecReport(copy: RipecTemplateCopy): Promise<string> {
+  async createRipecReport(copy: RipecTemplateCopy): Promise<string[]> {
     const templatePath = await this.resolveRipecTemplatePath();
     const template = await readFile(templatePath);
     const targetName = this.sanitizeFilePart(copy.targetName);
-    const reviewerFileName = `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(copy.reviewerName)}.docx`;
-    const reviewerPath = path.join(copy.targetDirectory, reviewerFileName);
+    const anonymousLabel = `Rapporteur ${copy.reviewerNumber}`;
+    const candidate = copy.candidate ?? {};
 
     await mkdir(copy.targetDirectory, { recursive: true, mode: 0o755 });
-    await writeFile(reviewerPath, this.renderDocx(template, copy.reviewerName, copy.candidate ?? {}));
 
-    return reviewerPath;
+    const anonymousPath = path.join(
+      copy.targetDirectory,
+      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(anonymousLabel)}.docx`,
+    );
+    const namedPath = path.join(
+      copy.targetDirectory,
+      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(copy.reviewerName)}.docx`,
+    );
+
+    await writeFile(anonymousPath, this.renderRipecDocx(template, anonymousLabel, candidate, true));
+    await writeFile(namedPath, this.renderRipecDocx(template, copy.reviewerName, candidate, false));
+
+    return [anonymousPath, namedPath];
   }
 
   async createAvancementReports(copy: AvancementTemplateCopy): Promise<string[]> {
@@ -142,7 +156,12 @@ export class DocxTemplateService {
     });
   }
 
-  private renderDocx(template: Buffer, reviewerLabel: string, candidate: CandidateMetadata): Buffer {
+  private renderRipecDocx(
+    template: Buffer,
+    reviewerLabel: string,
+    candidate: CandidateMetadata,
+    anonymous: boolean,
+  ): Buffer {
     const entries = this.readZipEntries(template);
     const outputEntries = entries.map((entry) => {
       const data = this.readEntryData(template, entry);
@@ -152,11 +171,27 @@ export class DocxTemplateService {
 
       const xml = data.toString('utf8');
       const replacement = this.escapeXmlText(reviewerLabel);
-      const updated = this.fillCandidateFields(this.replaceReviewerLabel(xml, replacement), candidate);
+      let updated = this.fillCandidateFields(this.replaceReviewerLabel(xml, replacement), candidate);
+      if (anonymous) {
+        updated = this.removeRipecSignaturePhrase(updated);
+      }
       return { name: entry.name, data: Buffer.from(updated, 'utf8') };
     });
 
     return this.writeZipEntries(outputEntries);
+  }
+
+  private removeRipecSignaturePhrase(xml: string): string {
+    return this.updateParagraphs(xml, (paragraph) => {
+      if (!paragraph.includes(RIPEC_SIGNATURE_PHRASE)) {
+        return paragraph;
+      }
+
+      return paragraph.replace(
+        /<w:t(?:\s[^>]*)?>\s*Signature\s*<\/w:t>/g,
+        '<w:t></w:t>',
+      );
+    });
   }
 
   private replaceReviewerLabel(xml: string, replacement: string): string {
@@ -164,15 +199,17 @@ export class DocxTemplateService {
       return xml.replace(new RegExp(TEMPLATE_REVIEWER_LABEL, 'g'), replacement);
     }
 
-    const updated = xml.replace(SPLIT_REVIEWER_LABEL_PATTERN, (_match, between: string) => {
+    const splitUpdated = xml.replace(SPLIT_REVIEWER_LABEL_PATTERN, (_match, between: string) => {
       return `<w:t>${replacement}</w:t>${between}<w:t></w:t>`;
     });
-
-    if (updated === xml) {
-      throw new Error('Champ rapporteur introuvable dans le template RIPEC.');
+    if (splitUpdated !== xml) {
+      return splitUpdated;
     }
 
-    return updated;
+    return xml.replace(
+      RIPEC_TITLE_PATTERN,
+      (_match, prefix: string) => `${prefix} xml:space="preserve">de : ${replacement}</w:t>`,
+    );
   }
 
   private fillCandidateFields(xml: string, candidate: CandidateMetadata): string {
