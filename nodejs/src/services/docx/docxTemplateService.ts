@@ -56,22 +56,26 @@ export class DocxTemplateService {
     const templatePath = await this.resolveRipecTemplatePath();
     const template = await readFile(templatePath);
     const targetName = this.sanitizeFilePart(copy.targetName);
-    const anonymousLabel = `Rapporteur ${copy.reviewerNumber}`;
+    const n = copy.reviewerNumber;
+    const anonymousTitleLabel = `${n} Anonyme`;
+    const namedTitleLabel = `${n} de : ${copy.reviewerName}`;
+    const anonymousFileLabel = `R${n} - Anonyme`;
+    const namedFileLabel = `R${n} - ${copy.reviewerName}`;
     const candidate = copy.candidate ?? {};
 
     await mkdir(copy.targetDirectory, { recursive: true, mode: 0o755 });
 
     const anonymousPath = path.join(
       copy.targetDirectory,
-      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(anonymousLabel)}.docx`,
+      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(anonymousFileLabel)}.docx`,
     );
     const namedPath = path.join(
       copy.targetDirectory,
-      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(copy.reviewerName)}.docx`,
+      `Rapport RIPEC - ${targetName} - ${this.sanitizeFilePart(namedFileLabel)}.docx`,
     );
 
-    await writeFile(anonymousPath, this.renderRipecDocx(template, anonymousLabel, candidate, true));
-    await writeFile(namedPath, this.renderRipecDocx(template, copy.reviewerName, candidate, false));
+    await writeFile(anonymousPath, this.renderRipecDocx(template, anonymousTitleLabel, candidate, true));
+    await writeFile(namedPath, this.renderRipecDocx(template, namedTitleLabel, candidate, false));
 
     return [anonymousPath, namedPath];
   }
@@ -171,7 +175,11 @@ export class DocxTemplateService {
 
       const xml = data.toString('utf8');
       const replacement = this.escapeXmlText(reviewerLabel);
-      let updated = this.fillCandidateFields(this.replaceReviewerLabel(xml, replacement), candidate);
+      let updated = this.fillCandidateFields(
+        this.replaceReviewerLabel(xml, replacement),
+        candidate,
+        { skipCandidatureAppend: true },
+      );
       if (anonymous) {
         updated = this.removeRipecSignaturePhrase(updated);
       }
@@ -208,11 +216,15 @@ export class DocxTemplateService {
 
     return xml.replace(
       RIPEC_TITLE_PATTERN,
-      (_match, prefix: string) => `${prefix} xml:space="preserve">de : ${replacement}</w:t>`,
+      (_match, prefix: string) => `${prefix} xml:space="preserve">${replacement}</w:t>`,
     );
   }
 
-  private fillCandidateFields(xml: string, candidate: CandidateMetadata): string {
+  private fillCandidateFields(
+    xml: string,
+    candidate: CandidateMetadata,
+    options: { skipCandidatureAppend?: boolean } = {},
+  ): string {
     const candidateFullName = [candidate.lastName, candidate.firstName]
       .map((value) => value?.trim())
       .filter(Boolean)
@@ -221,7 +233,7 @@ export class DocxTemplateService {
     return this.updateParagraphs(xml, (paragraph) => {
       const text = this.getParagraphText(paragraph);
 
-      if (candidateFullName && text.includes('sur la candidature de')) {
+      if (candidateFullName && !options.skipCandidatureAppend && text.includes('sur la candidature de')) {
         return this.appendTextToParagraph(paragraph, ` ${candidateFullName}`);
       }
 

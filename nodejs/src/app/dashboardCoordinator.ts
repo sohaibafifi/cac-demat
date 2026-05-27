@@ -534,11 +534,14 @@ export class DashboardCoordinator {
 
   reviewerPackages(): ReviewerPackage[] {
     const candidateMetadataByFile = this.buildReviewerCandidateMetadataMap();
+    const reviewerNumbersByFile = this.buildReviewerNumberMap();
 
     return this.getReviewerSummaries()
       .map((summary) => {
+        const reviewerName = summary.name.trim();
         const files = Array.from(new Set(summary.files.map((f) => f.name.trim()).filter(Boolean)));
         const candidateMetadata: Record<string, CandidateMetadata> = {};
+        const reviewerNumberByFile: Record<string, number> = {};
 
         for (const file of files) {
           const candidate = candidateMetadataByFile.get(file.toLowerCase());
@@ -546,17 +549,53 @@ export class DashboardCoordinator {
             candidateMetadata[file] = { ...candidate };
             candidateMetadata[file.toLowerCase()] = { ...candidate };
           }
+
+          const numberForReviewer = reviewerNumbersByFile
+            .get(file.toLowerCase())
+            ?.get(this.normalizeReviewerKey(reviewerName));
+          if (numberForReviewer) {
+            reviewerNumberByFile[file] = numberForReviewer;
+            reviewerNumberByFile[file.toLowerCase()] = numberForReviewer;
+          }
         }
 
         return files.length > 0
           ? {
-              name: summary.name.trim(),
+              name: reviewerName,
               files,
               ...(Object.keys(candidateMetadata).length > 0 ? { candidateMetadata } : {}),
+              ...(Object.keys(reviewerNumberByFile).length > 0 ? { reviewerNumberByFile } : {}),
             }
           : null;
       })
       .filter((entry): entry is ReviewerPackage => entry !== null);
+  }
+
+  private buildReviewerNumberMap(): Map<string, Map<string, number>> {
+    const map = new Map<string, Map<string, number>>();
+
+    for (const assignment of this.reviewersFromCsv) {
+      const fileKey = assignment.file.trim().toLowerCase();
+      if (!fileKey) continue;
+
+      let reviewerMap = map.get(fileKey);
+      if (!reviewerMap) {
+        reviewerMap = new Map<string, number>();
+        map.set(fileKey, reviewerMap);
+      }
+
+      assignment.reviewers.forEach((reviewer, index) => {
+        const key = this.normalizeReviewerKey(reviewer);
+        if (!key || reviewerMap!.has(key)) return;
+        reviewerMap!.set(key, index + 1);
+      });
+    }
+
+    return map;
+  }
+
+  private normalizeReviewerKey(value: string): string {
+    return value.trim().toLowerCase();
   }
 
   private buildReviewerCandidateMetadataMap(): Map<string, CandidateMetadata> {

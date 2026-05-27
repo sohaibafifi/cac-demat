@@ -20,10 +20,12 @@ export interface ReviewerPackage {
   name: string;
   files: string[];
   candidateMetadata?: Record<string, CandidateMetadata>;
+  reviewerNumberByFile?: Record<string, number>;
 }
 
 interface NormalizedReviewerPackage extends PdfPackage {
   candidateMetadata?: Record<string, CandidateMetadata>;
+  reviewerNumberByFile?: Record<string, number>;
 }
 
 export class ReviewerPreparationService {
@@ -56,6 +58,7 @@ export class ReviewerPreparationService {
         name: pkg.name.trim(),
         files: pkg.files.map((f) => f.trim()).filter((f) => f),
         ...(pkg.candidateMetadata ? { candidateMetadata: { ...pkg.candidateMetadata } } : {}),
+        ...(pkg.reviewerNumberByFile ? { reviewerNumberByFile: { ...pkg.reviewerNumberByFile } } : {}),
       }))
       .filter((pkg) => pkg.name && pkg.files.length > 0);
 
@@ -155,7 +158,10 @@ export class ReviewerPreparationService {
           continue;
         }
 
-        const reviewerNumber = reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ?? 1;
+        const reviewerNumber =
+          this.resolvePackageReviewerNumber(pkg, file.relative) ??
+          reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ??
+          1;
 
         try {
           const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
@@ -276,6 +282,15 @@ export class ReviewerPreparationService {
     }
 
     return result;
+  }
+
+  private resolvePackageReviewerNumber(
+    pkg: NormalizedReviewerPackage,
+    fileRelative: string,
+  ): number | undefined {
+    const map = pkg.reviewerNumberByFile;
+    if (!map) return undefined;
+    return map[fileRelative] ?? map[fileRelative.toLowerCase()];
   }
 
   private resolveTargetName(file: PdfInventoryEntry): string {

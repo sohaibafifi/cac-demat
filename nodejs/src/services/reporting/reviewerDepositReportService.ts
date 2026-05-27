@@ -529,7 +529,20 @@ export class ReviewerDepositReportService {
       return this.cleanLabel(trimmed);
     }
 
+    // New format: "{candidat} - R{N} - {reviewer|Anonyme}"
     const last = parts[parts.length - 1];
+    const prev = parts.length >= 2 ? parts[parts.length - 2] : '';
+    const rPrefixMatch = /^r\s*\d+$/i.test(prev);
+    const isAnonymousNew = rPrefixMatch && /^anonyme$/i.test(last);
+    const isReviewerNew = rPrefixMatch && this.normalizeForMatch(last) === this.normalizeForMatch(reviewerName);
+
+    if (isAnonymousNew || isReviewerNew) {
+      const target = parts.length >= 3 ? parts.slice(0, -2).join(' - ') : trimmed;
+      const variant = isAnonymousNew ? ' (anonyme)' : ' (nominatif)';
+      return `${this.cleanLabel(target)}${variant}`;
+    }
+
+    // Legacy format fallback
     const isReviewer = this.normalizeForMatch(last) === this.normalizeForMatch(reviewerName);
     const isAnonymous = /^rapporteur\s*#?\s*\d+$/i.test(last);
 
