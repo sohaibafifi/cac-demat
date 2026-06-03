@@ -313,7 +313,7 @@ export class ReviewerDepositReportService {
         ? avancementReports
         : fileEntries.filter((entryName) => EXPECTED_PDF_EXTENSIONS.has(path.posix.extname(entryName).toLowerCase()));
 
-    return sourceEntries.map((entryName) => {
+    const expected = sourceEntries.map((entryName) => {
       const label = ripecReports.length > 0
         ? this.resolveRipecReportLabel(entryName, reviewerName)
         : avancementReports.length > 0
@@ -330,6 +330,49 @@ export class ReviewerDepositReportService {
         tokens: this.tokenize(label),
       };
     });
+
+    // Each RIPEC candidate must have 2 expected reports (anonyme + nominatif).
+    if (ripecReports.length > 0) {
+      return this.ensureRipecVariantsExpected(expected, zipName, reviewerName);
+    }
+    return expected;
+  }
+
+  private ensureRipecVariantsExpected(
+    expected: ExpectedReport[],
+    zipName: string,
+    _reviewerName: string,
+  ): ExpectedReport[] {
+    const VARIANT_RE = /\s+\((anonyme|nominatif)\)$/i;
+    const byTarget = new Map<string, { anonyme?: ExpectedReport; nominatif?: ExpectedReport }>();
+
+    for (const report of expected) {
+      const match = report.label.match(VARIANT_RE);
+      if (!match) continue;
+      const target = report.label.replace(VARIANT_RE, '').trim();
+      const variant = match[1].toLowerCase() as 'anonyme' | 'nominatif';
+      const slot = byTarget.get(target) ?? {};
+      slot[variant] = report;
+      byTarget.set(target, slot);
+    }
+
+    const synthetic: ExpectedReport[] = [];
+    for (const [target, slot] of byTarget.entries()) {
+      for (const variant of ['anonyme', 'nominatif'] as const) {
+        if (slot[variant]) continue;
+        const label = `${target} (${variant})`;
+        synthetic.push({
+          id: `${zipName}:synthetic:${target}:${variant}`,
+          label,
+          zipEntryName: `${target} (${variant})`,
+          sourceZip: zipName,
+          normalized: this.normalizeForMatch(label),
+          tokens: this.tokenize(label),
+        });
+      }
+    }
+
+    return [...expected, ...synthetic];
   }
 
   private readZipEntries(buffer: Buffer): ZipEntryInfo[] {
