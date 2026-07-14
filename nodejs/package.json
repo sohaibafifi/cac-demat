@@ -16,6 +16,7 @@
   "main": "main.cjs",
   "scripts": {
     "build": "node scripts/clean-dist.cjs && tsc && node scripts/copy-electron-assets.cjs && node scripts/optimize-size.cjs",
+    "test": "tsc && node --test tests/*.test.mjs",
     "build:watch": "tsc --watch",
     "lint": "eslint .",
     "dev": "npm run electron",

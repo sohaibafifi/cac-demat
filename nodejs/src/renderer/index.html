@@ -17,6 +17,19 @@
         --accent-soft: rgba(37, 99, 235, 0.15);
         --chip-bg: rgba(37, 99, 235, 0.12);
         --chip-fg: #1d4ed8;
+        --control-bg: rgba(255,255,255,0.9);
+        --control-fg: #0f172a;
+        --control-placeholder: #64748b;
+        --surface-raised: rgba(255,255,255,0.96);
+        --surface-subtle: rgba(148, 163, 184, 0.07);
+        --surface-highlight: inset 0 1px 0 rgba(255,255,255,0.6);
+        --link-fg: #2563eb;
+        --success-fg: #047857;
+        --error-fg: #b91c1c;
+        --success-surface: rgba(16, 185, 129, 0.1);
+        --warning-fg: #92400e;
+        --warning-surface: rgba(245, 158, 11, 0.12);
+        --error-surface: rgba(239, 68, 68, 0.1);
         font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       }
 
@@ -31,6 +44,19 @@
           --shadow: 0 16px 32px rgba(2, 6, 23, 0.55);
           --chip-bg: rgba(37, 99, 235, 0.22);
           --chip-fg: #bfdbfe;
+          --control-bg: #1e293b;
+          --control-fg: #f1f5f9;
+          --control-placeholder: #94a3b8;
+          --surface-raised: #1e293b;
+          --surface-subtle: rgba(148, 163, 184, 0.1);
+          --surface-highlight: inset 0 1px 0 rgba(255,255,255,0.08);
+          --link-fg: #93c5fd;
+          --success-fg: #6ee7b7;
+          --error-fg: #fca5a5;
+          --success-surface: rgba(16, 185, 129, 0.14);
+          --warning-fg: #fcd34d;
+          --warning-surface: rgba(245, 158, 11, 0.15);
+          --error-surface: rgba(239, 68, 68, 0.15);
         }
       }
 
@@ -104,7 +130,7 @@
       }
 
       .card-soft h2 {
-        color: #0f172a;
+        color: var(--fg);
       }
 
       label span,
@@ -116,16 +142,25 @@
       }
 
       input[type="text"],
+      input[type="url"],
+      input[type="password"],
+      input[type="email"],
       select,
       textarea {
         width: 100%;
         padding: 0.6rem 0.75rem;
         border-radius: 10px;
         border: 1px solid var(--border);
-        background: rgba(255,255,255,0.9);
-        color: var(--fg);
+        background: var(--control-bg);
+        color: var(--control-fg);
         font-size: 0.95rem;
         transition: border 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--control-placeholder);
+        opacity: 1;
       }
 
       .combo-muted { color: var(--muted); font-size: 0.8rem; }
@@ -156,6 +191,9 @@
       .section[data-hidden="true"] { display: none; }
 
       input[type="text"]:focus,
+      input[type="url"]:focus,
+      input[type="password"]:focus,
+      input[type="email"]:focus,
       select:focus,
       textarea:focus {
         outline: none;
@@ -167,7 +205,7 @@
         min-height: 170px;
         resize: vertical;
         line-height: 1.35;
-        background: rgba(255,255,255,0.94);
+        background: var(--control-bg);
         font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
       }
 
@@ -213,10 +251,10 @@
       }
 
       button.secondary {
-        background: rgba(255,255,255,0.96);
+        background: var(--surface-raised);
         border: 1px solid rgba(148,163,184,0.28);
         color: var(--fg);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+        box-shadow: var(--surface-highlight);
       }
 
       .collapse-toggle {
@@ -249,7 +287,7 @@
         border: 1px solid var(--border);
         border-radius: 12px;
         padding: 0.8rem 0.9rem;
-        background: rgba(255,255,255,0.96);
+        background: var(--surface-raised);
         box-shadow: var(--shadow);
       }
 
@@ -354,10 +392,10 @@
       .action-inline button { flex: 0 0 auto; }
       .primary-action { font-size: 0.85rem; padding: 0.55rem 1.2rem; }
       .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
-      .metrics-block { border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; padding: 0.55rem 0.65rem; background: rgba(255,255,255,0.94); min-height: 120px; }
-      .link-action { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.82rem; padding: 0; text-decoration: underline; }
+      .metrics-block { border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; padding: 0.55rem 0.65rem; background: var(--surface-raised); min-height: 120px; }
+      .link-action { background: none; border: none; color: var(--link-fg); cursor: pointer; font-size: 0.82rem; padding: 0; text-decoration: underline; }
 
-      .path-display { font-size: 0.82rem; color: var(--accent); margin-top: 0.25rem; word-break: break-all; }
+      .path-display { font-size: 0.82rem; color: var(--link-fg); margin-top: 0.25rem; word-break: break-all; }
       .path-display[data-empty="true"] { color: var(--muted); }
       .path-list { display: flex; flex-direction: column; gap: 0.35rem; }
       .path-pill { display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(37,99,235,0.08); color: var(--fg); padding: 0.35rem 0.5rem; border-radius: 10px; border: 1px solid rgba(37,99,235,0.18); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); word-break: break-all; }
@@ -367,12 +405,463 @@
       .reporting-result { color: #0f766e; font-size: 0.82rem; word-break: break-word; }
       .reporting-result[data-empty="true"] { color: var(--muted); }
 
+      #section-sharing {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .sharing-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.2rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sharing-header h2 {
+        margin: 0;
+      }
+
+      .sharing-header p {
+        margin: 0.2rem 0 0;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .sharing-connection-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex: 0 0 auto;
+        max-width: 52%;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      .sharing-status-dot {
+        width: 9px;
+        height: 9px;
+        flex: 0 0 9px;
+        border-radius: 50%;
+        background: #94a3b8;
+        box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+      }
+
+      .sharing-connection-status[data-state="testing"] .sharing-status-dot {
+        background: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+      }
+
+      .sharing-connection-status[data-state="success"] {
+        color: var(--success-fg);
+      }
+
+      .sharing-connection-status[data-state="success"] .sharing-status-dot {
+        background: #10b981;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+      }
+
+      .sharing-connection-status[data-state="error"] {
+        color: var(--error-fg);
+      }
+
+      .sharing-connection-status[data-state="error"] .sharing-status-dot {
+        background: #ef4444;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
+      }
+
+      .sharing-step {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 0.85rem;
+        padding: 1rem 1.2rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sharing-step:last-child {
+        border-bottom: 0;
+      }
+
+      .sharing-step-number {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .sharing-step-body {
+        display: grid;
+        gap: 0.75rem;
+        min-width: 0;
+      }
+
+      .sharing-step-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      .sharing-step-head strong {
+        font-size: 0.95rem;
+      }
+
+      .sharing-step-head small,
+      .sharing-meta {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .sharing-connection-fields {
+        display: grid;
+        grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1fr) auto;
+        gap: 0.65rem;
+        align-items: end;
+      }
+
+      .sharing-connection-fields label,
+      .sharing-destination-grid label,
+      .sharing-recipient-target,
+      .sharing-options label {
+        display: grid;
+        gap: 0.28rem;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .sharing-connection-fields input,
+      .sharing-destination-grid input,
+      .sharing-recipient-row input,
+      .sharing-recipient-row select,
+      .sharing-options input,
+      .sharing-options select {
+        box-sizing: border-box;
+      }
+
+      .sharing-security-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+
+      .sharing-folder-picker {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-width: 0;
+      }
+
+      .sharing-folder-picker .path-display {
+        margin: 0;
+        min-width: 0;
+      }
+
+      .sharing-destination-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 1fr) minmax(220px, 0.8fr);
+        gap: 0.65rem;
+        align-items: start;
+      }
+
+      .sharing-switches {
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .sharing-switch {
+        display: flex !important;
+        align-items: center;
+        gap: 0.55rem !important;
+        min-height: 40px;
+        padding: 0 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface-subtle);
+        color: var(--fg) !important;
+        font-size: 0.82rem !important;
+      }
+
+      .sharing-switch input {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        accent-color: var(--accent);
+      }
+
+      .sharing-switch > span {
+        display: inline;
+        margin: 0;
+        color: inherit;
+        font-size: inherit;
+      }
+
+      .sharing-switch[data-disabled="true"] {
+        opacity: 0.58;
+      }
+
+      .sharing-options {
+        font-size: 0.8rem;
+      }
+
+      .sharing-options summary {
+        width: fit-content;
+        color: var(--link-fg);
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .sharing-options-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin-top: 0.65rem;
+        padding: 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface-subtle);
+      }
+
+      .sharing-options-grid.is-single {
+        grid-template-columns: minmax(0, 1fr);
+        max-width: 360px;
+      }
+
+      .sharing-recipient-list {
+        display: grid;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .sharing-recipient-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 0.75fr) minmax(220px, 1fr) auto;
+        gap: 0.7rem;
+        align-items: end;
+        padding: 0.75rem;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .sharing-recipient-row:last-child {
+        border-bottom: 0;
+      }
+
+      .sharing-recipient-identity {
+        align-self: center;
+        min-width: 0;
+      }
+
+      .sharing-recipient-identity strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.88rem;
+      }
+
+      .sharing-recipient-status {
+        display: block;
+        margin-top: 0.18rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .sharing-recipient-row[data-state="working"] .sharing-recipient-status {
+        color: var(--link-fg);
+        font-weight: 700;
+      }
+
+      .sharing-recipient-row[data-state="success"] .sharing-recipient-status {
+        color: var(--success-fg);
+        font-weight: 700;
+      }
+
+      .sharing-recipient-row[data-state="warning"] {
+        background: var(--warning-surface);
+        box-shadow: inset 4px 0 0 #f59e0b;
+      }
+
+      .sharing-recipient-row[data-state="warning"] .sharing-recipient-status {
+        color: var(--warning-fg);
+        font-weight: 700;
+      }
+
+      .sharing-recipient-row[data-state="error"] {
+        background: var(--error-surface);
+        box-shadow: inset 4px 0 0 #ef4444;
+      }
+
+      .sharing-recipient-row[data-state="error"] .sharing-recipient-status {
+        color: var(--error-fg);
+        font-weight: 800;
+      }
+
+      .sharing-recipient-options,
+      .sharing-recipient-result {
+        grid-column: 1 / -1;
+      }
+
+      .sharing-recipient-options[open] {
+        padding-top: 0.15rem;
+      }
+
+      .sharing-recipient-options summary {
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.74rem;
+      }
+
+      .sharing-recipient-options-grid {
+        display: grid;
+        grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1fr);
+        gap: 0.65rem;
+        margin-top: 0.55rem;
+      }
+
+      .sharing-recipient-result {
+        min-height: 0;
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.76rem;
+        word-break: break-word;
+      }
+
+      .sharing-upload-progress {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 0.35rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-subtle);
+      }
+
+      .sharing-upload-progress[hidden] {
+        display: none;
+      }
+
+      .sharing-upload-progress-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        color: var(--muted);
+        font-size: 0.74rem;
+      }
+
+      .sharing-upload-progress-head span:first-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .sharing-upload-progress progress {
+        appearance: none;
+        width: 100%;
+        height: 8px;
+        overflow: hidden;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.24);
+      }
+
+      .sharing-upload-progress progress::-webkit-progress-bar {
+        background: rgba(148, 163, 184, 0.24);
+        border-radius: 999px;
+      }
+
+      .sharing-upload-progress progress::-webkit-progress-value {
+        background: #2563eb;
+        border-radius: 999px;
+        transition: width 0.2s ease;
+      }
+
+      .sharing-recipient-row[data-state="success"] .sharing-upload-progress progress::-webkit-progress-value {
+        background: #10b981;
+      }
+
+      .sharing-recipient-result:empty {
+        display: none;
+      }
+
+      .sharing-recipient-row[data-state="warning"] .sharing-recipient-result,
+      .sharing-recipient-row[data-state="error"] .sharing-recipient-result {
+        display: block;
+        padding: 0.55rem 0.65rem;
+        border-radius: 6px;
+        font-weight: 600;
+      }
+
+      .sharing-recipient-row[data-state="warning"] .sharing-recipient-result {
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        color: var(--warning-fg);
+      }
+
+      .sharing-recipient-row[data-state="error"] .sharing-recipient-result {
+        border: 1px solid rgba(239, 68, 68, 0.38);
+        color: var(--error-fg);
+      }
+
+      .sharing-empty {
+        padding: 1rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-align: center;
+      }
+
+      .sharing-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+      }
+
+      .sharing-summary {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .sharing-summary[data-state="success"],
+      .sharing-summary[data-state="warning"],
+      .sharing-summary[data-state="error"] {
+        padding: 0.55rem 0.65rem;
+        border-radius: 6px;
+        font-weight: 700;
+      }
+
+      .sharing-summary[data-state="success"] {
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        background: var(--success-surface);
+        color: var(--success-fg);
+      }
+
+      .sharing-summary[data-state="warning"] {
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        background: var(--warning-surface);
+        color: var(--warning-fg);
+      }
+
+      .sharing-summary[data-state="error"] {
+        border: 1px solid rgba(239, 68, 68, 0.38);
+        background: var(--error-surface);
+        color: var(--error-fg);
+      }
+
       ul { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.45rem; max-height: 240px; overflow-y: auto; padding-right: 4px; }
 
       li {
         padding: 0.55rem 0.7rem;
         border-radius: 12px;
-        background: rgba(255,255,255,0.96);
+        background: var(--surface-raised);
         border: 1px solid rgba(15, 23, 42, 0.1);
         display: flex;
         align-items: center;
@@ -437,7 +926,7 @@
       .summary-item {
         border-radius: 12px;
         padding: 0.65rem 0.75rem;
-        background: rgba(255,255,255,0.9);
+        background: var(--surface-raised);
         border: 1px solid var(--border);
         display: grid;
         gap: 0.45rem;
@@ -470,8 +959,8 @@
         padding: 0.65rem 0.8rem;
         border: 1px solid var(--border);
         border-radius: 12px;
-        background: rgba(255,255,255,0.96);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+        background: var(--surface-raised);
+        box-shadow: var(--surface-highlight);
       }
 
       .toggle-row input[type="checkbox"] {
@@ -496,7 +985,7 @@
         padding: 0.75rem 0.85rem;
         border: 1px solid var(--border);
         border-radius: 12px;
-        background: rgba(255,255,255,0.78);
+        background: var(--surface-subtle);
       }
 
       .stage-selector-head {
@@ -526,7 +1015,7 @@
         padding: 0.55rem 0.65rem;
         border: 1px solid rgba(148, 163, 184, 0.22);
         border-radius: 10px;
-        background: rgba(255,255,255,0.9);
+        background: var(--surface-raised);
       }
 
       .stage-option input[type="checkbox"] {
@@ -604,12 +1093,37 @@
         color: var(--muted);
         font-size: 0.78rem;
         border-top: 1px solid var(--border);
-        background: rgba(255,255,255,0.85);
+        background: var(--surface-raised);
       }
 
       @media (max-width: 980px) {
         main {
           grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .sharing-header,
+        .sharing-step-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .sharing-connection-status {
+          max-width: 100%;
+        }
+
+        .sharing-connection-fields,
+        .sharing-destination-grid,
+        .sharing-options-grid,
+        .sharing-recipient-row,
+        .sharing-recipient-options-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sharing-folder-picker {
+          align-items: flex-start;
+          flex-direction: column;
         }
       }
 
@@ -655,6 +1169,7 @@
           <button id="tab-reviewers" class="tab-btn active" role="tab" aria-selected="">Rapporteurs</button>
           <button id="tab-members" class="tab-btn" role="tab" aria-selected="false">Membres</button>
           <button id="tab-reporting" class="tab-btn" role="tab" aria-selected="false">Reporting</button>
+          <button id="tab-sharing" class="tab-btn" role="tab" aria-selected="false">Partage ownCloud</button>
         </nav>
       </section>
 
@@ -891,6 +1406,108 @@ Marie Martin;.;*.pdf</pre>
             <button type="button" id="open-reviewer-reporting" class="link-action" disabled>Ouvrir le dernier reporting</button>
           </div>
           <div id="reviewer-reporting-result" class="reporting-result" data-empty="true">Aucun reporting généré.</div>
+        </div>
+      </section>
+
+      <section id="section-sharing" class="section" data-hidden="true">
+        <div class="sharing-header">
+          <div>
+            <h2>Partage ownCloud</h2>
+            <p>Préparez puis partagez les dossiers des rapporteurs.</p>
+          </div>
+          <div id="oc-test-result" class="sharing-connection-status" data-state="idle">
+            <span class="sharing-status-dot" aria-hidden="true"></span>
+            <span data-role="connection-text">Connexion non testée</span>
+          </div>
+        </div>
+
+        <div class="sharing-step">
+          <span class="sharing-step-number" aria-hidden="true">1</span>
+          <div class="sharing-step-body">
+            <div class="sharing-step-head">
+              <strong>Connexion</strong>
+              <small>Mot de passe applicatif ownCloud</small>
+            </div>
+            <div class="sharing-connection-fields">
+              <label>Login
+                <input type="text" id="oc-login" placeholder="prenom.nom" autocomplete="username" />
+              </label>
+              <label>Mot de passe
+                <input type="password" id="oc-password" placeholder="Mot de passe applicatif" autocomplete="off" />
+              </label>
+              <button type="button" id="oc-connect">Tester et enregistrer</button>
+            </div>
+            <p id="oc-security-note" class="sharing-security-note">Aucun mot de passe enregistré.</p>
+            <details class="sharing-options">
+              <summary>Paramètres du serveur</summary>
+              <div class="sharing-options-grid">
+                <label>URL du serveur
+                  <input type="url" id="oc-base-url" placeholder="https://owncloud.univ-artois.fr" />
+                </label>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="sharing-step">
+          <span class="sharing-step-number" aria-hidden="true">2</span>
+          <div class="sharing-step-body">
+            <div class="sharing-step-head">
+              <strong>Dossier et destination</strong>
+              <small>Un sous-dossier par rapporteur</small>
+            </div>
+            <div class="sharing-folder-picker">
+              <button type="button" id="oc-pick-folder" class="secondary">Choisir le dossier local</button>
+              <span id="oc-folder-path" class="path-display" data-empty="true">Aucun dossier sélectionné</span>
+            </div>
+            <div class="sharing-destination-grid">
+              <label>Dossier ownCloud
+                <input type="text" id="oc-remote-root" placeholder="/CAC2026/Rapporteurs" />
+              </label>
+              <div class="sharing-switches">
+                <label class="sharing-switch">
+                  <input type="checkbox" id="oc-upload-default" />
+                  <span>Téléverser les dossiers locaux puis les partager</span>
+                </label>
+                <label class="sharing-switch" id="oc-notify-email-control" data-disabled="true" title="Testez la connexion pour vérifier cette fonction.">
+                  <input type="checkbox" id="oc-notify-email" disabled />
+                  <span>Envoyer une notification par e-mail</span>
+                </label>
+              </div>
+            </div>
+            <details class="sharing-options">
+              <summary>Permissions</summary>
+              <div class="sharing-options-grid is-single">
+                <label>Permissions
+                  <select id="oc-permissions">
+                    <option value="1">Lecture seule</option>
+                    <option value="15">Lecture et dépôt</option>
+                    <option value="31">Tous droits</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="sharing-step" id="oc-recipients-card">
+          <span class="sharing-step-number" aria-hidden="true">3</span>
+          <div class="sharing-step-body">
+            <div class="sharing-step-head">
+              <div>
+                <strong>Destinataires</strong>
+                <div id="oc-recipient-count" class="sharing-meta">0 destinataire</div>
+              </div>
+              <div class="sharing-actions">
+                <button type="button" id="oc-share-all" disabled>Partager tout</button>
+                <button type="button" id="oc-cancel" class="danger" disabled>Annuler</button>
+              </div>
+            </div>
+            <div id="oc-recipients-list" class="sharing-recipient-list">
+              <div class="sharing-empty">Choisissez un dossier local pour afficher les destinataires.</div>
+            </div>
+            <div id="oc-share-summary" class="sharing-summary" data-state="idle">Connectez-vous pour activer le partage.</div>
+          </div>
         </div>
       </section>
 

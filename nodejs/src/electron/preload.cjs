@@ -26,6 +26,12 @@ const api = {
   runPipeline: (mode) => ipcRenderer.invoke('coordinator:run', mode),
   stopPipeline: () => ipcRenderer.invoke('coordinator:stop'),
   generateReviewerDepositReport: (rootDir) => ipcRenderer.invoke('reporting:generate-reviewer-deposits', rootDir),
+  ownCloudGetConfig: () => ipcRenderer.invoke('owncloud:get-config'),
+  ownCloudSetConfig: (payload) => ipcRenderer.invoke('owncloud:set-config', payload),
+  ownCloudTest: () => ipcRenderer.invoke('owncloud:test'),
+  ownCloudScanFolder: (folder) => ipcRenderer.invoke('owncloud:scan-folder', folder),
+  ownCloudShareFolder: (payload) => ipcRenderer.invoke('owncloud:share-folder', payload),
+  ownCloudCancel: () => ipcRenderer.invoke('owncloud:cancel'),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),
   getAppVersion: () => ipcRenderer.invoke('system:get-version'),
@@ -49,6 +55,13 @@ const api = {
     ipcRenderer.on('view:advanced-mode', handler);
     return () => {
       ipcRenderer.removeListener('view:advanced-mode', handler);
+    };
+  },
+  onOwnCloudProgress: (callback) => {
+    const handler = (_event, progress) => callback(progress);
+    ipcRenderer.on('owncloud:progress', handler);
+    return () => {
+      ipcRenderer.removeListener('owncloud:progress', handler);
     };
   },
 };

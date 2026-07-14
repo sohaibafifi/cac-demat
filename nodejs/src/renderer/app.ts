@@ -251,7 +251,7 @@ const getElectronApiOrWarn = async (): Promise<ElectronApi | null> => {
 
 let currentState: CoordinatorState | null = null;
 let busy = false;
-let assignmentTab: 'reviewers' | 'members' | 'reporting' = 'reviewers';
+let assignmentTab: 'reviewers' | 'members' | 'reporting' | 'sharing' = 'reviewers';
 let advancedMode = false;
 let lastRunNotificationId: number | null = null;
 let progressStartedAt: number | null = null;
@@ -311,10 +311,31 @@ const elements = {
   tabReviewers: document.getElementById('tab-reviewers') as HTMLButtonElement,
   tabMembers: document.getElementById('tab-members') as HTMLButtonElement,
   tabReporting: document.getElementById('tab-reporting') as HTMLButtonElement,
+  tabSharing: document.getElementById('tab-sharing') as HTMLButtonElement,
   sectionGeneralInfo: document.getElementById('section-general-info') as HTMLElement,
   sectionReviewers: document.getElementById('section-reviewers') as HTMLElement,
   sectionMembers: document.getElementById('section-members') as HTMLElement,
   sectionReporting: document.getElementById('section-reporting') as HTMLElement,
+  sectionSharing: document.getElementById('section-sharing') as HTMLElement,
+  ocBaseUrl: document.getElementById('oc-base-url') as HTMLInputElement,
+  ocLogin: document.getElementById('oc-login') as HTMLInputElement,
+  ocPassword: document.getElementById('oc-password') as HTMLInputElement,
+  ocRemoteRoot: document.getElementById('oc-remote-root') as HTMLInputElement,
+  ocPermissions: document.getElementById('oc-permissions') as HTMLSelectElement,
+  ocUploadDefault: document.getElementById('oc-upload-default') as HTMLInputElement,
+  ocNotifyEmail: document.getElementById('oc-notify-email') as HTMLInputElement,
+  ocNotifyEmailControl: document.getElementById('oc-notify-email-control') as HTMLElement,
+  ocConnect: document.getElementById('oc-connect') as HTMLButtonElement,
+  ocTestResult: document.getElementById('oc-test-result') as HTMLElement,
+  ocSecurityNote: document.getElementById('oc-security-note') as HTMLElement,
+  ocPickFolder: document.getElementById('oc-pick-folder') as HTMLButtonElement,
+  ocFolderPath: document.getElementById('oc-folder-path') as HTMLElement,
+  ocRecipientsCard: document.getElementById('oc-recipients-card') as HTMLElement,
+  ocRecipientsList: document.getElementById('oc-recipients-list') as HTMLElement,
+  ocRecipientCount: document.getElementById('oc-recipient-count') as HTMLElement,
+  ocShareAll: document.getElementById('oc-share-all') as HTMLButtonElement,
+  ocCancel: document.getElementById('oc-cancel') as HTMLButtonElement,
+  ocShareSummary: document.getElementById('oc-share-summary') as HTMLElement,
   sectionActivity: document.getElementById('section-activity') as HTMLElement,
   appVersion: document.getElementById('app-version') as HTMLElement | null,
   progressContainer: document.getElementById('progress-card') as HTMLElement,
@@ -970,17 +991,22 @@ function renderTabs(): void {
   const isReviewers = assignmentTab === 'reviewers';
   const isMembers = assignmentTab === 'members';
   const isReporting = assignmentTab === 'reporting';
+  const isSharing = assignmentTab === 'sharing';
   elements.tabReviewers.classList.toggle('active', isReviewers);
   elements.tabMembers.classList.toggle('active', isMembers);
   elements.tabReporting.classList.toggle('active', isReporting);
+  elements.tabSharing.classList.toggle('active', isSharing);
   elements.tabReviewers.setAttribute('aria-selected', String(isReviewers));
   elements.tabMembers.setAttribute('aria-selected', String(isMembers));
   elements.tabReporting.setAttribute('aria-selected', String(isReporting));
+  elements.tabSharing.setAttribute('aria-selected', String(isSharing));
   elements.sectionReviewers.setAttribute('data-hidden', isReviewers ? 'false' : 'true');
   elements.sectionMembers.setAttribute('data-hidden', isMembers ? 'false' : 'true');
   elements.sectionReporting.setAttribute('data-hidden', isReporting ? 'false' : 'true');
-  elements.sectionGeneralInfo.setAttribute('data-hidden', isReporting ? 'true' : 'false');
-  elements.sectionActivity.setAttribute('data-hidden', isReporting ? 'true' : 'false');
+  elements.sectionSharing.setAttribute('data-hidden', isSharing ? 'false' : 'true');
+  const hidesPipelineSections = isReporting || isSharing;
+  elements.sectionGeneralInfo.setAttribute('data-hidden', hidesPipelineSections ? 'true' : 'false');
+  elements.sectionActivity.setAttribute('data-hidden', hidesPipelineSections ? 'true' : 'false');
 }
 
 
@@ -1445,6 +1471,512 @@ function formatError(error: unknown): string {
   return 'Une erreur inattendue est survenue.';
 }
 
+interface SharingRecipient {
+  name: string;
+  absolutePath: string;
+  relativePath: string;
+  suggestedUsername: string;
+}
+
+type SharingOperationResult = 'success' | 'warning' | 'missing' | 'error' | 'cancelled';
+type SharingVisualState = 'idle' | 'working' | 'success' | 'warning' | 'error';
+
+type OwnCloudConfigDescription = {
+  baseUrl: string;
+  login: string;
+  remoteRootPath: string;
+  hasPassword: boolean;
+  passwordStorage: 'encrypted' | 'session-only' | 'missing';
+  defaultPermissions: number;
+  uploadByDefault: boolean;
+  notifyByEmail: boolean;
+};
+
+let sharingFolder: string | null = null;
+let sharingRecipients: SharingRecipient[] = [];
+let sharingPanelLoaded = false;
+let sharingOperationActive = false;
+let sharingBatchCancelled = false;
+let sharingConnectionReady = false;
+let sharingMailNotificationAvailable: boolean | null = null;
+
+function setOwnCloudConnectionStatus(
+  state: 'idle' | 'testing' | 'success' | 'error',
+  message: string,
+): void {
+  elements.ocTestResult.dataset.state = state;
+  const text = elements.ocTestResult.querySelector<HTMLElement>('[data-role="connection-text"]');
+  if (text) {
+    text.textContent = message;
+  }
+}
+
+function renderOwnCloudPasswordState(config: OwnCloudConfigDescription): void {
+  elements.ocPassword.placeholder = config.hasPassword
+    ? 'Mot de passe déjà renseigné'
+    : 'Mot de passe applicatif';
+  if (config.passwordStorage === 'encrypted') {
+    elements.ocSecurityNote.textContent = 'Mot de passe enregistré dans le stockage sécurisé du système.';
+  } else if (config.passwordStorage === 'session-only') {
+    elements.ocSecurityNote.textContent = 'Chiffrement indisponible: le mot de passe sera oublié à la fermeture.';
+  } else {
+    elements.ocSecurityNote.textContent = 'Aucun mot de passe enregistré.';
+  }
+}
+
+function setOwnCloudMailNotificationAvailability(available: boolean | null): void {
+  sharingMailNotificationAvailable = available;
+  updateSharingActionStates();
+}
+
+function setSharingSummary(state: SharingVisualState, message: string): void {
+  elements.ocShareSummary.dataset.state = state;
+  elements.ocShareSummary.textContent = message;
+}
+
+function setSharingRecipientState(
+  row: HTMLElement,
+  state: SharingVisualState,
+  statusText: string,
+  resultText = '',
+): void {
+  row.dataset.state = state;
+  const status = row.querySelector<HTMLElement>('[data-role="status"]');
+  const result = row.querySelector<HTMLElement>('[data-role="result"]');
+  if (status) status.textContent = statusText;
+  if (result) result.textContent = resultText;
+}
+
+function prepareSharingUploadProgress(row: HTMLElement, visible: boolean): void {
+  const container = row.querySelector<HTMLElement>('[data-role="upload-progress"]');
+  const progress = row.querySelector<HTMLProgressElement>('[data-role="upload-progress-bar"]');
+  const label = row.querySelector<HTMLElement>('[data-role="upload-progress-label"]');
+  const count = row.querySelector<HTMLElement>('[data-role="upload-progress-count"]');
+  if (!container || !progress || !label || !count) return;
+  container.hidden = !visible;
+  progress.max = 1;
+  progress.value = 0;
+  label.textContent = 'Préparation du téléversement...';
+  count.textContent = '0/?';
+}
+
+function updateSharingUploadProgress(
+  row: HTMLElement,
+  current: number,
+  total: number,
+  labelText: string,
+): void {
+  const container = row.querySelector<HTMLElement>('[data-role="upload-progress"]');
+  const progress = row.querySelector<HTMLProgressElement>('[data-role="upload-progress-bar"]');
+  const label = row.querySelector<HTMLElement>('[data-role="upload-progress-label"]');
+  const count = row.querySelector<HTMLElement>('[data-role="upload-progress-count"]');
+  if (!container || !progress || !label || !count) return;
+  const safeTotal = Math.max(0, total);
+  const safeCurrent = Math.min(Math.max(0, current), safeTotal || 1);
+  container.hidden = false;
+  progress.max = safeTotal || 1;
+  progress.value = safeTotal === 0 && current > 0 ? 1 : safeCurrent;
+  label.textContent = labelText;
+  count.textContent = safeTotal > 0 ? `${safeCurrent}/${safeTotal}` : '0/0';
+}
+
+function formatOwnCloudShareError(error: unknown, shareWith: string): string {
+  const message = formatError(error)
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim();
+  if (/please specify a valid user/i.test(message)) {
+    return `Username ownCloud introuvable: ${shareWith}. Vérifiez le username puis réessayez.`;
+  }
+  return message || 'Le partage ownCloud a échoué.';
+}
+
+async function initSharingPanel(): Promise<void> {
+  if (sharingPanelLoaded) return;
+  sharingPanelLoaded = true;
+  const api = window.electronAPI;
+  if (!api?.ownCloudGetConfig) return;
+  try {
+    const config = await api.ownCloudGetConfig() as OwnCloudConfigDescription;
+    elements.ocBaseUrl.value = config.baseUrl ?? '';
+    elements.ocLogin.value = config.login ?? '';
+    elements.ocRemoteRoot.value = config.remoteRootPath ?? '';
+    elements.ocPermissions.value = String(config.defaultPermissions ?? 1);
+    elements.ocUploadDefault.checked = Boolean(config.uploadByDefault);
+    elements.ocNotifyEmail.checked = Boolean(config.notifyByEmail);
+    setOwnCloudMailNotificationAvailability(null);
+    renderOwnCloudPasswordState(config);
+    setOwnCloudConnectionStatus(
+      'idle',
+      config.hasPassword ? 'Configuration enregistrée, connexion à tester' : 'Connexion non configurée',
+    );
+    updateSharingActionStates();
+  } catch (error) {
+    setOwnCloudConnectionStatus('error', `Configuration illisible: ${formatError(error)}`);
+  }
+}
+
+async function saveSharingConfig(): Promise<boolean> {
+  const api = window.electronAPI;
+  if (!api?.ownCloudSetConfig) return false;
+  try {
+    const passwordValue = elements.ocPassword.value;
+    const payload = {
+      baseUrl: elements.ocBaseUrl.value.trim(),
+      login: elements.ocLogin.value.trim(),
+      appPassword: passwordValue,
+      keepPassword: passwordValue.length === 0,
+      remoteRootPath: elements.ocRemoteRoot.value.trim(),
+      defaultPermissions: Number(elements.ocPermissions.value),
+      uploadByDefault: elements.ocUploadDefault.checked,
+      notifyByEmail: elements.ocNotifyEmail.checked,
+    };
+    const config = await api.ownCloudSetConfig(payload) as OwnCloudConfigDescription;
+    elements.ocPassword.value = '';
+    renderOwnCloudPasswordState(config);
+    return true;
+  } catch (error) {
+    setOwnCloudConnectionStatus('error', formatError(error));
+    return false;
+  }
+}
+
+async function handleSharingConnect(): Promise<void> {
+  const api = window.electronAPI;
+  if (!api?.ownCloudTest) return;
+  sharingConnectionReady = false;
+  setOwnCloudMailNotificationAvailability(null);
+  updateSharingActionStates();
+  setOwnCloudConnectionStatus('testing', 'Connexion en cours...');
+  elements.ocConnect.disabled = true;
+  if (!await saveSharingConfig()) {
+    elements.ocConnect.disabled = false;
+    return;
+  }
+  try {
+    const result = await api.ownCloudTest();
+    const server = [result.productName, result.serverVersion].filter(Boolean).join(' ');
+    const sharing = result.sharingApiEnabled === false ? 'partage indisponible' : 'partage disponible';
+    sharingConnectionReady = result.sharingApiEnabled !== false && result.webdavAvailable === true;
+    setOwnCloudMailNotificationAvailability(result.mailNotificationAvailable ?? null);
+    const mail = result.mailNotificationAvailable === true
+      ? ', notifications e-mail disponibles'
+      : result.mailNotificationAvailable === false
+        ? ', notifications e-mail désactivées par le serveur'
+        : '';
+    setOwnCloudConnectionStatus(
+      sharingConnectionReady ? 'success' : 'error',
+      `${server || 'ownCloud'} connecté, ${sharing}${mail}`,
+    );
+  } catch (error) {
+    setOwnCloudMailNotificationAvailability(null);
+    setOwnCloudConnectionStatus('error', formatError(error));
+  } finally {
+    elements.ocConnect.disabled = false;
+    updateSharingActionStates();
+  }
+}
+
+async function handleSharingPickFolder(): Promise<void> {
+  const api = window.electronAPI;
+  if (!api?.selectFolder || !api?.ownCloudScanFolder) return;
+  const folder = await api.selectFolder();
+  if (!folder) return;
+  try {
+    const result = await api.ownCloudScanFolder(folder);
+    sharingFolder = result.folder;
+    sharingRecipients = result.recipients;
+    elements.ocFolderPath.textContent = sharingFolder ?? folder;
+    elements.ocFolderPath.dataset.empty = 'false';
+    renderSharingRecipients();
+  } catch (error) {
+    elements.ocFolderPath.textContent = `Erreur: ${formatError(error)}`;
+    elements.ocFolderPath.dataset.empty = 'true';
+    sharingRecipients = [];
+    renderSharingRecipients();
+  }
+}
+
+function renderSharingRecipients(): void {
+  elements.ocRecipientsList.innerHTML = '';
+  elements.ocRecipientCount.textContent = `${sharingRecipients.length} destinataire${sharingRecipients.length > 1 ? 's' : ''}`;
+  if (sharingRecipients.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'sharing-empty';
+    empty.textContent = sharingFolder
+      ? 'Aucun sous-dossier destinataire détecté.'
+      : 'Choisissez un dossier local pour afficher les destinataires.';
+    elements.ocRecipientsList.appendChild(empty);
+    updateSharingActionStates();
+    return;
+  }
+
+  for (const recipient of sharingRecipients) {
+    const row = document.createElement('div');
+    row.className = 'sharing-recipient-row';
+    row.dataset.recipient = recipient.name;
+    row.dataset.state = 'idle';
+    row.innerHTML = `
+      <div class="sharing-recipient-identity">
+        <strong>${escapeHtml(recipient.name)}</strong>
+        <span class="sharing-recipient-status" data-role="status">En attente</span>
+      </div>
+      <label class="sharing-recipient-target">
+        <span>Username ownCloud</span>
+        <input type="text" data-role="share-with" value="${escapeHtml(recipient.suggestedUsername)}" placeholder="prenom.nom" />
+      </label>
+      <button type="button" class="secondary" data-role="share">Partager</button>
+      <div class="sharing-upload-progress" data-role="upload-progress" hidden>
+        <div class="sharing-upload-progress-head">
+          <span data-role="upload-progress-label">Préparation du téléversement...</span>
+          <span data-role="upload-progress-count">0/?</span>
+        </div>
+        <progress data-role="upload-progress-bar" max="1" value="0"></progress>
+      </div>
+      <details class="sharing-recipient-options">
+        <summary>Options</summary>
+        <div class="sharing-recipient-options-grid">
+          <label>Mode
+            <select data-role="mode">
+              <option value="upload-and-share">Envoyer puis partager</option>
+              <option value="share-only">Partager le dossier existant</option>
+            </select>
+          </label>
+          <label>Chemin ownCloud
+            <input type="text" data-role="remote-path" />
+          </label>
+        </div>
+      </details>
+      <div class="sharing-recipient-result" data-role="result"></div>
+    `;
+    const remoteInput = row.querySelector<HTMLInputElement>('[data-role="remote-path"]')!;
+    remoteInput.value = computeDefaultRemotePath(recipient.name);
+    const modeSelect = row.querySelector<HTMLSelectElement>('[data-role="mode"]')!;
+    modeSelect.value = elements.ocUploadDefault.checked ? 'upload-and-share' : 'share-only';
+    const button = row.querySelector<HTMLButtonElement>('[data-role="share"]')!;
+    button.addEventListener('click', () => {
+      void handleSharingSingle(row, recipient);
+    });
+    elements.ocRecipientsList.appendChild(row);
+  }
+  updateSharingActionStates();
+}
+
+function computeDefaultRemotePath(recipientName: string): string {
+  const root = elements.ocRemoteRoot.value.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  const safe = recipientName.replace(/^\/+/, '').trim();
+  if (!root) return `/${safe}`;
+  return `${root.startsWith('/') ? root : `/${root}`}/${safe}`;
+}
+
+function updateSharingActionStates(): void {
+  const sharingDisabled = sharingOperationActive || !sharingConnectionReady;
+  elements.ocShareAll.disabled = sharingDisabled || sharingRecipients.length === 0;
+  elements.ocCancel.disabled = !sharingOperationActive;
+  elements.ocPickFolder.disabled = sharingOperationActive;
+  elements.ocConnect.disabled = sharingOperationActive;
+  elements.ocNotifyEmail.disabled = sharingOperationActive || sharingMailNotificationAvailable !== true;
+  elements.ocNotifyEmailControl.dataset.disabled = String(elements.ocNotifyEmail.disabled);
+  if (sharingOperationActive) {
+    elements.ocNotifyEmailControl.title = 'Une opération de partage est en cours.';
+  } else if (sharingMailNotificationAvailable === false) {
+    elements.ocNotifyEmailControl.title = 'Les notifications par e-mail sont désactivées sur le serveur ownCloud.';
+  } else if (sharingMailNotificationAvailable === null) {
+    elements.ocNotifyEmailControl.title = 'Testez la connexion pour vérifier cette fonction.';
+  } else {
+    elements.ocNotifyEmailControl.removeAttribute('title');
+  }
+  for (const button of Array.from(elements.ocRecipientsList.querySelectorAll<HTMLButtonElement>('[data-role="share"]'))) {
+    button.disabled = sharingDisabled;
+  }
+}
+
+function setSharingOperationActive(active: boolean): void {
+  sharingOperationActive = active;
+  updateSharingActionStates();
+}
+
+function updateSharingRecipientDefaults(): void {
+  for (const row of Array.from(elements.ocRecipientsList.querySelectorAll<HTMLElement>('[data-recipient]'))) {
+    const remoteInput = row.querySelector<HTMLInputElement>('[data-role="remote-path"]');
+    const modeSelect = row.querySelector<HTMLSelectElement>('[data-role="mode"]');
+    const recipientName = row.dataset.recipient ?? '';
+    if (remoteInput) remoteInput.value = computeDefaultRemotePath(recipientName);
+    if (modeSelect) modeSelect.value = elements.ocUploadDefault.checked ? 'upload-and-share' : 'share-only';
+  }
+}
+
+async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipient): Promise<SharingOperationResult> {
+  const api = window.electronAPI;
+  if (!api?.ownCloudShareFolder) return 'error';
+  const shareWithInput = row.querySelector<HTMLInputElement>('[data-role="share-with"]')!;
+  const remoteInput = row.querySelector<HTMLInputElement>('[data-role="remote-path"]')!;
+  const modeSelect = row.querySelector<HTMLSelectElement>('[data-role="mode"]')!;
+  const shareWith = shareWithInput.value.trim();
+  prepareSharingUploadProgress(row, false);
+  if (!shareWith) {
+    setSharingRecipientState(
+      row,
+      'error',
+      'Username manquant',
+      'Renseignez le username ownCloud du rapporteur avant le partage.',
+    );
+    return 'missing';
+  }
+
+  const uploadsFiles = modeSelect.value === 'upload-and-share';
+  prepareSharingUploadProgress(row, uploadsFiles);
+  setSharingRecipientState(
+    row,
+    'working',
+    modeSelect.value === 'upload-and-share' ? 'Envoi et partage en cours...' : 'Partage en cours...',
+  );
+
+  try {
+    const response = await api.ownCloudShareFolder({
+      recipientName: recipient.name,
+      localPath: recipient.absolutePath,
+      remotePath: remoteInput.value.trim(),
+      shareWith,
+      shareType: 'user',
+      permissions: Number(elements.ocPermissions.value),
+      mode: modeSelect.value,
+      sendNotification: elements.ocNotifyEmail.checked && !elements.ocNotifyEmail.disabled,
+    });
+    const uploaded = response.uploaded
+      ? ` (fichiers envoyés: ${response.uploaded.uploaded}/${response.uploaded.total})`
+      : '';
+    if (response.uploaded) {
+      updateSharingUploadProgress(
+        row,
+        response.uploaded.total > 0 ? response.uploaded.total : 1,
+        response.uploaded.total,
+        response.uploaded.total > 0 ? 'Téléversement terminé' : 'Dossier créé, aucun fichier à téléverser',
+      );
+    }
+    const reused = response.alreadyExisted ? ' Partage déjà existant.' : '';
+    const notification = response.notification as {
+      requested?: boolean;
+      sent?: boolean;
+      alreadySent?: boolean;
+      error?: string | null;
+    } | undefined;
+    const notificationResult = notification?.sent
+      ? ' Notification e-mail envoyée.'
+      : notification?.alreadySent
+        ? ' Notification e-mail déjà envoyée.'
+        : '';
+    const shareResult = `Partage disponible pour ${response.share.shareWith}.${reused}${uploaded}${notificationResult}`;
+    if (notification?.error) {
+      setSharingRecipientState(
+        row,
+        'warning',
+        'Partagé, e-mail non envoyé',
+        `${shareResult} Erreur de notification: ${notification.error}`,
+      );
+      return 'warning';
+    }
+    setSharingRecipientState(row, 'success', 'Partage réussi', shareResult);
+    return 'success';
+  } catch (error) {
+    const message = formatError(error);
+    const cancelled = sharingBatchCancelled || /abort|annul/i.test(message);
+    setSharingRecipientState(
+      row,
+      cancelled ? 'idle' : 'error',
+      cancelled ? 'Annulé' : 'Échec du partage',
+      cancelled ? 'Opération annulée.' : formatOwnCloudShareError(error, shareWith),
+    );
+    return cancelled ? 'cancelled' : 'error';
+  }
+}
+
+async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient): Promise<void> {
+  if (sharingOperationActive || !sharingConnectionReady) return;
+  sharingBatchCancelled = false;
+  setSharingOperationActive(true);
+  try {
+    const outcome = await shareSingleRecipient(row, recipient);
+    if (outcome === 'success') {
+      setSharingSummary('success', `Partage réussi pour ${recipient.name}.`);
+    } else if (outcome === 'warning') {
+      setSharingSummary('warning', `Partage réussi pour ${recipient.name}, mais la notification e-mail a échoué.`);
+    } else if (outcome === 'error' || outcome === 'missing') {
+      setSharingSummary('error', `Partage impossible pour ${recipient.name}. Consultez la ligne rouge.`);
+    } else {
+      setSharingSummary('idle', `Partage annulé pour ${recipient.name}.`);
+    }
+  } finally {
+    setSharingOperationActive(false);
+  }
+}
+
+async function handleSharingShareAll(): Promise<void> {
+  if (sharingOperationActive || !sharingConnectionReady) return;
+  const rows = Array.from(elements.ocRecipientsList.querySelectorAll<HTMLElement>('[data-recipient]'));
+  let successes = 0;
+  let warnings = 0;
+  let errors = 0;
+  let missing = 0;
+  sharingBatchCancelled = false;
+  setSharingSummary('idle', 'Partage en cours...');
+  setSharingOperationActive(true);
+  try {
+    for (const row of rows) {
+      if (sharingBatchCancelled) break;
+      const name = row.dataset.recipient ?? '';
+      const recipient = sharingRecipients.find((candidate) => candidate.name === name);
+      if (!recipient) continue;
+      const result = await shareSingleRecipient(row, recipient);
+      if (result === 'success') successes += 1;
+      if (result === 'warning') warnings += 1;
+      if (result === 'error') errors += 1;
+      if (result === 'missing') missing += 1;
+      if (result === 'cancelled') break;
+    }
+  } finally {
+    setSharingOperationActive(false);
+  }
+  const cancellation = sharingBatchCancelled ? ', traitement annulé' : '';
+  const summary = `${successes} réussi(s), ${warnings} avec avertissement, ${errors} en erreur, ${missing} sans username${cancellation}.`;
+  if (errors > 0 || missing > 0) {
+    setSharingSummary('error', summary);
+  } else if (warnings > 0) {
+    setSharingSummary('warning', summary);
+  } else if (sharingBatchCancelled) {
+    setSharingSummary('idle', summary);
+  } else {
+    setSharingSummary('success', summary);
+  }
+}
+
+async function handleSharingCancel(): Promise<void> {
+  if (!sharingOperationActive) return;
+  sharingBatchCancelled = true;
+  setSharingSummary('idle', 'Annulation en cours...');
+  await window.electronAPI?.ownCloudCancel?.();
+}
+
+function handleOwnCloudProgress(progress: { recipientName?: string; current?: number; total?: number; relative?: string }): void {
+  const row = Array.from(elements.ocRecipientsList.querySelectorAll<HTMLElement>('[data-recipient]'))
+    .find((candidate) => candidate.dataset.recipient === progress.recipientName);
+  const status = row?.querySelector<HTMLElement>('[data-role="status"]');
+  if (!row || !status) return;
+  const current = progress.current ?? 0;
+  const total = progress.total ?? 0;
+  status.textContent = `Téléversement ${current}/${total}`;
+  updateSharingUploadProgress(row, current, total, progress.relative ?? 'Téléversement en cours...');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function bootstrap(): Promise<void> {
   try {
     setBusy(true);
@@ -1462,6 +1994,9 @@ async function bootstrap(): Promise<void> {
       api.onCoordinatorProgress((progress) => {
         setProgressState(progress as PipelineProgressState);
       });
+    }
+    if (api.onOwnCloudProgress) {
+      api.onOwnCloudProgress(handleOwnCloudProgress);
     }
 
     const state = await api.init();
@@ -1839,6 +2374,19 @@ document.addEventListener('DOMContentLoaded', () => {
     assignmentTab = 'reporting';
     renderTabs();
   });
+  elements.tabSharing.addEventListener('click', () => {
+    assignmentTab = 'sharing';
+    renderTabs();
+    void initSharingPanel();
+  });
+
+  // Sharing panel actions
+  elements.ocConnect.addEventListener('click', () => { void handleSharingConnect(); });
+  elements.ocPickFolder.addEventListener('click', () => { void handleSharingPickFolder(); });
+  elements.ocShareAll.addEventListener('click', () => { void handleSharingShareAll(); });
+  elements.ocCancel.addEventListener('click', () => { void handleSharingCancel(); });
+  elements.ocRemoteRoot.addEventListener('change', updateSharingRecipientDefaults);
+  elements.ocUploadDefault.addEventListener('change', updateSharingRecipientDefaults);
 
   // Collapse toggles
   elements.toggleManualReviewers.addEventListener('click', () => { collapsed.manualReviewers = !collapsed.manualReviewers; applyCollapsed(); });
