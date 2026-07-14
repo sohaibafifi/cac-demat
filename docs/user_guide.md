@@ -8,6 +8,8 @@ Bienvenue dans la documentation de **CAC Demat**, l'application destinée à fac
 *   Associer des rapporteurs à des candidats (PDF) via un fichier Excel/CSV.
 *   Attribuer des dossiers (ou des dossiers entiers) aux membres de la commission.
 *   Générer des dossiers organisés prêts à être partagés.
+*   Téléverser et partager les dossiers des rapporteurs sur ownCloud.
+*   Suivre la réception des rapports déposés par les rapporteurs.
 
 # Installation et Lancement
 
@@ -17,14 +19,14 @@ L'application est disponible pour **Windows**, **macOS** et **Linux**.
 2.  Installez l'application (fichier `.exe`, `.dmg` ou `.AppImage`).
 3.  Lancez **CAC Demat**.
 
-> **Note :** Aucune authentification n'est requise. L'application fonctionne entièrement en local sur votre machine.
+> **Note :** La génération des dossiers fonctionne entièrement en local. L'onglet **Partage ownCloud** nécessite un compte ownCloud et un mot de passe applicatif.
 
 # Interface Principale
 
 À l'ouverture, vous accédez à l'écran principal composé de trois zones :
 1.  **En-tête** : Titre et version.
 2.  **Configuration Générale** : Paramètres communs.
-3.  **Onglets d'Attribution** : Choix entre "Rapporteurs" et "Membres".
+3.  **Onglets de travail** : "Rapporteurs", "Membres", "Reporting" et "Partage ownCloud".
 
 ![Capture d'écran : Vue d'ensemble de l'interface par défaut](screenshots/home_screen.png)
 
@@ -87,6 +89,53 @@ Une fois les attributions configurées :
 3.  Une barre de progression (ou un indicateur d'état) s'affiche.
 4.  À la fin, un message vous confirme le nombre de dossiers générés.
 5.  Cliquez sur **"Ouvrir le dossier de sortie"** pour vérifier le résultat.
+
+## Partage des Dossiers sur ownCloud
+
+Onglet : **Partage ownCloud**
+
+Cet onglet permet de téléverser les dossiers générés, puis de les partager avec les rapporteurs à partir de leur username ownCloud.
+
+### 1. Connexion
+
+1.  Renseignez l'URL du serveur, par défaut `https://owncloud.univ-artois.fr`.
+2.  Saisissez votre login ownCloud et un mot de passe applicatif.
+3.  Cliquez sur **"Tester et enregistrer"**.
+
+Le mot de passe applicatif est enregistré avec le stockage sécurisé du système lorsqu'il est disponible. Sinon, il reste uniquement en mémoire et est oublié à la fermeture de l'application.
+
+Le test vérifie l'authentification, WebDAV, l'API de partage et la disponibilité des notifications par e-mail. Les boutons de partage restent désactivés tant que la connexion n'est pas validée.
+
+### 2. Dossier et Destination
+
+1.  Cliquez sur **"Choisir le dossier local"** et sélectionnez le répertoire qui contient un sous-dossier par rapporteur.
+2.  Vérifiez le **Dossier ownCloud**, par exemple `/CAC2026/Rapporteurs`.
+3.  Choisissez le comportement de téléversement :
+    *   **Téléverser les dossiers locaux puis les partager** coché : l'application crée les dossiers ownCloud, téléverse leur contenu, puis crée les partages.
+    *   Option décochée : aucun fichier n'est envoyé. L'application tente de partager les dossiers qui existent déjà sur ownCloud.
+4.  Choisissez les permissions : lecture seule, lecture et dépôt, ou tous droits.
+5.  Cochez **"Envoyer une notification par e-mail"** si cette fonction est autorisée par le serveur ownCloud.
+
+Pendant le téléversement, chaque ligne affiche le fichier en cours, le nombre de fichiers traités et une barre de progression. Pour un dossier vide, le dossier distant est créé sans fichier à téléverser.
+
+### 3. Destinataires
+
+L'application détecte les sous-dossiers et propose un username ownCloud à partir de leur nom. Par exemple, `Dupont_Jean` devient `jean.dupont`. Le username reste modifiable avant le partage.
+
+Vous pouvez :
+
+*   partager un seul dossier avec le bouton **"Partager"** de sa ligne ;
+*   traiter tous les rapporteurs avec **"Partager tout"** ;
+*   interrompre l'opération en cours avec **"Annuler"** ;
+*   ouvrir **"Options"** pour modifier le mode ou le chemin ownCloud d'un rapporteur.
+
+Les résultats sont affichés directement dans chaque ligne :
+
+*   **Vert** : téléversement et partage réussis ;
+*   **Orange** : partage réussi, mais notification par e-mail non envoyée ;
+*   **Rouge** : partage impossible, par exemple lorsque le username ownCloud est introuvable.
+
+Un échec de notification ne supprime pas le partage qui vient d'être créé. L'application ne renvoie pas une notification lorsque ownCloud indique qu'elle a déjà été envoyée.
 
 ## Reporting des Dépôts Rapporteurs
 
