@@ -1,4 +1,5 @@
-import { mkdir, readdir, rename, rm } from 'fs/promises';
+import { copyFile, mkdir, readdir, rename, rm, stat } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { runCommand } from '../../utils/process.js';
 import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
@@ -75,22 +76,24 @@ export class ZipService {
 
     await mkdir(path.dirname(zipPath), { recursive: true, mode: 0o755 });
 
+    const archiveExists = await this.fileExists(zipPath);
     const relativeToSource = path.relative(sourceDir, zipPath);
     const isInsideSource = relativeToSource && !relativeToSource.startsWith('..') && !path.isAbsolute(relativeToSource);
-    const workingZipPath = isInsideSource
-      ? path.join(path.dirname(sourceDir), path.basename(zipPath))
-      : zipPath;
+    const workingDirectory = isInsideSource ? path.dirname(sourceDir) : path.dirname(zipPath);
+    const workingZipPath = path.join(
+      workingDirectory,
+      `.${path.basename(zipPath, path.extname(zipPath))}.partial-${randomUUID()}.zip`,
+    );
 
-    await rm(zipPath, { force: true });
-    if (workingZipPath !== zipPath) {
-      await rm(workingZipPath, { force: true });
+    if (archiveExists) {
+      await copyFile(zipPath, workingZipPath);
     }
 
     const cwd = path.dirname(sourceDir);
     const folderName = path.basename(sourceDir);
 
     const { command, args } = process.platform === 'win32'
-      ? this.resolvePowershellCommand(folderName, workingZipPath)
+      ? this.resolvePowershellCommand(folderName, workingZipPath, archiveExists)
       : this.resolveZipCommand(folderName, workingZipPath);
 
     const onOutput = (chunk: string) => {
@@ -111,22 +114,20 @@ export class ZipService {
         abortSignal: options.abortSignal,
       });
     } catch (error) {
+      await rm(workingZipPath, { force: true });
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Impossible de créer l'archive pour ${label ?? folderName}: ${message}`);
     }
 
     if (result.exitCode !== 0) {
+      await rm(workingZipPath, { force: true });
       const error = result.stderr.trim() || result.stdout.trim();
       throw new Error(error || `Échec de la création de l'archive pour ${label ?? folderName}.`);
     }
 
-    if (workingZipPath !== zipPath) {
-      await mkdir(path.dirname(zipPath), { recursive: true, mode: 0o755 });
-      await rm(zipPath, { force: true });
-      await rename(workingZipPath, zipPath);
-    }
+    await this.replaceArchive(workingZipPath, zipPath, archiveExists);
 
-    options.logger?.(`Archive générée pour ${label ?? folderName}: ${zipPath}`);
+    options.logger?.(`${archiveExists ? 'Archive complétée' : 'Archive générée'} pour ${label ?? folderName}: ${zipPath}`);
 
     if (options.removeSource) {
       // Only remove source if it's not the same directory as the zip file
@@ -150,15 +151,47 @@ export class ZipService {
     };
   }
 
-  private resolvePowershellCommand(folderName: string, zipPath: string): { command: string; args: string[] } {
+  private resolvePowershellCommand(
+    folderName: string,
+    zipPath: string,
+    archiveExists: boolean,
+  ): { command: string; args: string[] } {
     const escapedFolder = folderName.replace(/'/g, "''");
     const escapedZip = zipPath.replace(/'/g, "''");
-    const script = `Compress-Archive -Path '${escapedFolder}' -DestinationPath '${escapedZip}' -Force`;
+    const mode = archiveExists ? '-Update' : '-Force';
+    const script = `Compress-Archive -LiteralPath '${escapedFolder}' -DestinationPath '${escapedZip}' ${mode}`;
 
     return {
       command: 'powershell.exe',
       args: ['-NoLogo', '-NoProfile', '-Command', script],
     };
+  }
+
+  private async replaceArchive(workingZipPath: string, zipPath: string, archiveExists: boolean): Promise<void> {
+    if (!archiveExists) {
+      await rename(workingZipPath, zipPath);
+      return;
+    }
+
+    const backupPath = `${zipPath}.backup-${randomUUID()}`;
+    await rename(zipPath, backupPath);
+    try {
+      await rename(workingZipPath, zipPath);
+      await rm(backupPath, { force: true });
+    } catch (error) {
+      await rm(zipPath, { force: true });
+      await rename(backupPath, zipPath).catch(() => undefined);
+      await rm(workingZipPath, { force: true });
+      throw error;
+    }
+  }
+
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      return (await stat(filePath)).isFile();
+    } catch {
+      return false;
+    }
   }
 
   private async hasFiles(dir: string, abortSignal?: AbortSignal): Promise<boolean> {

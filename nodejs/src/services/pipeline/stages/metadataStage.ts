@@ -48,6 +48,7 @@ export class MetadataStage implements PdfProcessingStage {
         sourcePath,
         '--json-output',
         jsonPath,
+        '--json-stream-data=none',
       ],
       { abortSignal },
     );
@@ -84,6 +85,7 @@ export class MetadataStage implements PdfProcessingStage {
     }
 
     let infoRef = typeof trailer['/Info'] === 'string' ? trailer['/Info'] : null;
+    const addsInfoReference = !infoRef;
     if (!infoRef) {
       const maxObjectId = Number(header.maxobjectid || 0);
       infoRef = `${maxObjectId + 1} 0 R`;
@@ -103,9 +105,18 @@ export class MetadataStage implements PdfProcessingStage {
     }
 
     cleanedInfo['/Subject'] = `u:${subject}`;
-    objects[objectKey] = { value: cleanedInfo };
+    const updates: Record<string, unknown> = {
+      [objectKey]: { value: cleanedInfo },
+    };
+    if (addsInfoReference) {
+      updates.trailer = { value: trailer };
+    }
 
-    return source;
+    // update-from-json accepts partial object sets. Only send the Info update so
+    // malformed or unusual page streams are never decoded and re-imported.
+    return {
+      qpdf: [header, updates],
+    };
   }
 
   private async rebuildPdf(sourcePath: string, jsonPath: string, abortSignal?: AbortSignal): Promise<string> {

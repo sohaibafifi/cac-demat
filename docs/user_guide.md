@@ -90,6 +90,8 @@ Une fois les attributions configurées :
 4.  À la fin, un message vous confirme le nombre de dossiers générés.
 5.  Cliquez sur **"Ouvrir le dossier de sortie"** pour vérifier le résultat.
 
+Vous pouvez lancer la génération en plusieurs lots, par exemple les MCF puis les PR. Si une archive existe déjà pour le même rapporteur et le même nom de CAC, les nouveaux fichiers y sont ajoutés. Un fichier portant exactement le même chemin remplace sa version précédente dans l'archive.
+
 ## Partage des Dossiers sur ownCloud
 
 Onglet : **Partage ownCloud**
