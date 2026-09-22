@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { OwnCloudShareService } from '../dist/services/sharing/ownCloudShareService.js';
+import {
+  OwnCloudAuthenticationError,
+  OwnCloudShareService,
+} from '../dist/services/sharing/ownCloudShareService.js';
 
 const credentials = {
   baseUrl: 'https://owncloud.univ-artois.fr',
@@ -64,6 +67,65 @@ test('testConnection validates status, OCS identity, capabilities and WebDAV', a
   const authenticated = calls.filter((call) => !call.url.endsWith('/status.php'));
   assert.ok(authenticated.every((call) => call.init.headers.Authorization.startsWith('Basic ')));
   assert.ok(authenticated.every((call) => !('requesttoken' in call.init.headers)));
+});
+
+test('testConnection stops after the first rejected authentication', async () => {
+  const calls = [];
+  const fetchMock = async (input, init = {}) => {
+    const url = String(input);
+    calls.push({ url, init });
+    if (url.endsWith('/status.php')) {
+      return new Response(JSON.stringify({
+        installed: true,
+        maintenance: false,
+        versionstring: '10.6.0',
+        productname: 'ownCloud',
+      }), { status: 200 });
+    }
+    return new Response('Unauthorized', { status: 401 });
+  };
+
+  await assert.rejects(
+    () => new OwnCloudShareService(fetchMock).testConnection(credentials),
+    OwnCloudAuthenticationError,
+  );
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].url, /\/cloud\/user/);
+  assert.ok(!calls.some((call) => call.url.includes('/cloud/capabilities')));
+  assert.ok(!calls.some((call) => call.init.method === 'PROPFIND'));
+});
+
+test('testConnection treats a forbidden identity response as an authentication rejection', async () => {
+  const fetchMock = async (input) => {
+    if (String(input).endsWith('/status.php')) {
+      return new Response(JSON.stringify({
+        installed: true,
+        maintenance: false,
+        versionstring: '10.6.0',
+        productname: 'ownCloud',
+      }), { status: 200 });
+    }
+    return new Response('Forbidden', { status: 403 });
+  };
+
+  await assert.rejects(
+    () => new OwnCloudShareService(fetchMock).testConnection(credentials),
+    OwnCloudAuthenticationError,
+  );
+});
+
+test('uploadDirectory reports a rejected WebDAV authentication', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cac-owncloud-auth-'));
+  try {
+    const fetchMock = async () => new Response('Unauthorized', { status: 401 });
+    await assert.rejects(
+      () => new OwnCloudShareService(fetchMock).uploadDirectory(credentials, root, '/CAC/Recipient'),
+      OwnCloudAuthenticationError,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('createShare checks existing shares before creating a user share', async () => {

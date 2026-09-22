@@ -3,7 +3,11 @@ import { BrowserWindow, app, safeStorage } from 'electron';
 import type { DashboardCoordinator, ProgressState } from '../app/dashboardCoordinator.js';
 import { serializeCoordinatorState } from './coordinatorSerializer.js';
 import { ReviewerDepositReportService } from '../services/reporting/reviewerDepositReportService.js';
-import { OwnCloudShareService, type OwnCloudShareType } from '../services/sharing/ownCloudShareService.js';
+import {
+  OwnCloudAuthenticationError,
+  OwnCloudShareService,
+  type OwnCloudShareType,
+} from '../services/sharing/ownCloudShareService.js';
 import { OwnCloudConfigStore, type OwnCloudConfig } from '../services/sharing/ownCloudConfigStore.js';
 import { SharingFolderScanner } from '../services/sharing/sharingFolderScanner.js';
 
@@ -329,6 +333,9 @@ export class IpcHandlerRegistry {
                 );
                 notification.sent = true;
               } catch (error) {
+                if (error instanceof OwnCloudAuthenticationError) {
+                  throw error;
+                }
                 notification.error = error instanceof Error
                   ? error.message
                   : 'La notification par e-mail a échoué.';

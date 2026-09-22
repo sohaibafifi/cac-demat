@@ -1478,7 +1478,7 @@ interface SharingRecipient {
   suggestedUsername: string;
 }
 
-type SharingOperationResult = 'success' | 'warning' | 'missing' | 'error' | 'cancelled';
+type SharingOperationResult = 'success' | 'warning' | 'missing' | 'error' | 'auth-error' | 'cancelled';
 type SharingVisualState = 'idle' | 'working' | 'success' | 'warning' | 'error';
 
 type OwnCloudConfigDescription = {
@@ -1499,6 +1499,10 @@ let sharingOperationActive = false;
 let sharingBatchCancelled = false;
 let sharingConnectionReady = false;
 let sharingMailNotificationAvailable: boolean | null = null;
+let sharingAuthenticationBlocked = false;
+
+const OWN_CLOUD_AUTHENTICATION_ERROR =
+  'Authentification ownCloud refusée. Aucun nouvel essai ne sera envoyé. Modifiez le username ou le mot de passe applicatif, puis attendez le déblocage du compte.';
 
 function setOwnCloudConnectionStatus(
   state: 'idle' | 'testing' | 'success' | 'error',
@@ -1588,7 +1592,31 @@ function formatOwnCloudShareError(error: unknown, shareWith: string): string {
   if (/please specify a valid user/i.test(message)) {
     return `Username ownCloud introuvable: ${shareWith}. Vérifiez le username puis réessayez.`;
   }
+  if (isOwnCloudAuthenticationError(error)) {
+    return OWN_CLOUD_AUTHENTICATION_ERROR;
+  }
   return message || 'Le partage ownCloud a échoué.';
+}
+
+function isOwnCloudAuthenticationError(error: unknown): boolean {
+  return /Authentification ownCloud refusée|HTTP 401|OCS 997|unauthori[sz]ed/i.test(formatError(error));
+}
+
+function blockOwnCloudAuthentication(): void {
+  sharingAuthenticationBlocked = true;
+  sharingConnectionReady = false;
+  setOwnCloudMailNotificationAvailability(null);
+  setOwnCloudConnectionStatus('error', OWN_CLOUD_AUTHENTICATION_ERROR);
+  updateSharingActionStates();
+}
+
+function unblockOwnCloudAuthentication(): void {
+  if (!sharingAuthenticationBlocked) return;
+  sharingAuthenticationBlocked = false;
+  sharingConnectionReady = false;
+  setOwnCloudMailNotificationAvailability(null);
+  setOwnCloudConnectionStatus('idle', 'Identifiants modifiés, connexion à tester');
+  updateSharingActionStates();
 }
 
 async function initSharingPanel(): Promise<void> {
@@ -1643,7 +1671,7 @@ async function saveSharingConfig(): Promise<boolean> {
 
 async function handleSharingConnect(): Promise<void> {
   const api = window.electronAPI;
-  if (!api?.ownCloudTest) return;
+  if (!api?.ownCloudTest || sharingAuthenticationBlocked) return;
   sharingConnectionReady = false;
   setOwnCloudMailNotificationAvailability(null);
   updateSharingActionStates();
@@ -1657,6 +1685,7 @@ async function handleSharingConnect(): Promise<void> {
     const result = await api.ownCloudTest();
     const server = [result.productName, result.serverVersion].filter(Boolean).join(' ');
     const sharing = result.sharingApiEnabled === false ? 'partage indisponible' : 'partage disponible';
+    sharingAuthenticationBlocked = false;
     sharingConnectionReady = result.sharingApiEnabled !== false && result.webdavAvailable === true;
     setOwnCloudMailNotificationAvailability(result.mailNotificationAvailable ?? null);
     const mail = result.mailNotificationAvailable === true
@@ -1669,8 +1698,12 @@ async function handleSharingConnect(): Promise<void> {
       `${server || 'ownCloud'} connecté, ${sharing}${mail}`,
     );
   } catch (error) {
-    setOwnCloudMailNotificationAvailability(null);
-    setOwnCloudConnectionStatus('error', formatError(error));
+    if (isOwnCloudAuthenticationError(error)) {
+      blockOwnCloudAuthentication();
+    } else {
+      setOwnCloudMailNotificationAvailability(null);
+      setOwnCloudConnectionStatus('error', formatError(error));
+    }
   } finally {
     elements.ocConnect.disabled = false;
     updateSharingActionStates();
@@ -1774,7 +1807,7 @@ function updateSharingActionStates(): void {
   elements.ocShareAll.disabled = sharingDisabled || sharingRecipients.length === 0;
   elements.ocCancel.disabled = !sharingOperationActive;
   elements.ocPickFolder.disabled = sharingOperationActive;
-  elements.ocConnect.disabled = sharingOperationActive;
+  elements.ocConnect.disabled = sharingOperationActive || sharingAuthenticationBlocked;
   elements.ocNotifyEmail.disabled = sharingOperationActive || sharingMailNotificationAvailable !== true;
   elements.ocNotifyEmailControl.dataset.disabled = String(elements.ocNotifyEmail.disabled);
   if (sharingOperationActive) {
@@ -1881,13 +1914,17 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
   } catch (error) {
     const message = formatError(error);
     const cancelled = sharingBatchCancelled || /abort|annul/i.test(message);
+    const authenticationRejected = !cancelled && isOwnCloudAuthenticationError(error);
+    if (authenticationRejected) {
+      blockOwnCloudAuthentication();
+    }
     setSharingRecipientState(
       row,
       cancelled ? 'idle' : 'error',
-      cancelled ? 'Annulé' : 'Échec du partage',
+      cancelled ? 'Annulé' : authenticationRejected ? 'Authentification refusée' : 'Échec du partage',
       cancelled ? 'Opération annulée.' : formatOwnCloudShareError(error, shareWith),
     );
-    return cancelled ? 'cancelled' : 'error';
+    return cancelled ? 'cancelled' : authenticationRejected ? 'auth-error' : 'error';
   }
 }
 
@@ -1901,6 +1938,8 @@ async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient
       setSharingSummary('success', `Partage réussi pour ${recipient.name}.`);
     } else if (outcome === 'warning') {
       setSharingSummary('warning', `Partage réussi pour ${recipient.name}, mais la notification e-mail a échoué.`);
+    } else if (outcome === 'auth-error') {
+      setSharingSummary('error', OWN_CLOUD_AUTHENTICATION_ERROR);
     } else if (outcome === 'error' || outcome === 'missing') {
       setSharingSummary('error', `Partage impossible pour ${recipient.name}. Consultez la ligne rouge.`);
     } else {
@@ -1918,6 +1957,7 @@ async function handleSharingShareAll(): Promise<void> {
   let warnings = 0;
   let errors = 0;
   let missing = 0;
+  let authenticationRejected = false;
   sharingBatchCancelled = false;
   setSharingSummary('idle', 'Partage en cours...');
   setSharingOperationActive(true);
@@ -1931,11 +1971,23 @@ async function handleSharingShareAll(): Promise<void> {
       if (result === 'success') successes += 1;
       if (result === 'warning') warnings += 1;
       if (result === 'error') errors += 1;
+      if (result === 'auth-error') {
+        errors += 1;
+        authenticationRejected = true;
+        break;
+      }
       if (result === 'missing') missing += 1;
       if (result === 'cancelled') break;
     }
   } finally {
     setSharingOperationActive(false);
+  }
+  if (authenticationRejected) {
+    setSharingSummary(
+      'error',
+      `Traitement arrêté après un refus d’authentification. ${successes} réussi(s), ${warnings} avec avertissement, ${errors} en erreur. Aucun autre destinataire n’a été traité.`,
+    );
+    return;
   }
   const cancellation = sharingBatchCancelled ? ', traitement annulé' : '';
   const summary = `${successes} réussi(s), ${warnings} avec avertissement, ${errors} en erreur, ${missing} sans username${cancellation}.`;
@@ -2382,6 +2434,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sharing panel actions
   elements.ocConnect.addEventListener('click', () => { void handleSharingConnect(); });
+  elements.ocBaseUrl.addEventListener('input', unblockOwnCloudAuthentication);
+  elements.ocLogin.addEventListener('input', unblockOwnCloudAuthentication);
+  elements.ocPassword.addEventListener('input', unblockOwnCloudAuthentication);
   elements.ocPickFolder.addEventListener('click', () => { void handleSharingPickFolder(); });
   elements.ocShareAll.addEventListener('click', () => { void handleSharingShareAll(); });
   elements.ocCancel.addEventListener('click', () => { void handleSharingCancel(); });

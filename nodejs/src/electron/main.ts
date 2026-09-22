@@ -460,6 +460,10 @@ export default async function start(electron: ElectronModule): Promise<void> {
     const rendererHtml = path.join(currentDir, '..', 'renderer', 'index.html');
     await mainWindow.loadFile(rendererHtml);
 
+    if (!app.isPackaged && process.argv.includes('--debug')) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+
     mainWindow.webContents.once('did-finish-load', () => {
       broadcastAdvancedMode(advancedMode);
     });

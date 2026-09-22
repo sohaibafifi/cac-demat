@@ -104,6 +104,8 @@ Cet onglet permet de téléverser les dossiers générés, puis de les partager 
 
 Le mot de passe applicatif est enregistré avec le stockage sécurisé du système lorsqu'il est disponible. Sinon, il reste uniquement en mémoire et est oublié à la fermeture de l'application.
 
+Utilisez un mot de passe applicatif ownCloud dédié, et non le mot de passe habituel de votre compte universitaire. En cas de refus d'authentification, l'application arrête immédiatement les contrôles et les partages en lot. Elle n'autorise un nouvel essai qu'après modification du username ou du mot de passe applicatif. Si le compte est déjà bloqué, attendez son déblocage ou contactez la DSI avant de réessayer.
+
 Le test vérifie l'authentification, WebDAV, l'API de partage et la disponibilité des notifications par e-mail. Les boutons de partage restent désactivés tant que la connexion n'est pas validée.
 
 ### 2. Dossier et Destination

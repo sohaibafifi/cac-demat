@@ -65,31 +65,50 @@ const SHARE_TYPE_FROM_CODE: Record<number, OwnCloudShareType> = {
 };
 
 const DEFAULT_PERMISSIONS = 1;
+const AUTHENTICATION_ERROR_MESSAGE =
+  'Authentification ownCloud refusée. Vérifiez le username et le mot de passe applicatif, puis attendez le déblocage du compte avant de réessayer.';
+
+export class OwnCloudAuthenticationError extends Error {
+  constructor() {
+    super(AUTHENTICATION_ERROR_MESSAGE);
+    this.name = 'OwnCloudAuthenticationError';
+  }
+}
 
 export class OwnCloudShareService {
   constructor(private readonly fetchFn: FetchLike = globalThis.fetch.bind(globalThis)) {}
 
   async testConnection(credentials: OwnCloudCredentials, signal?: AbortSignal): Promise<OwnCloudConnectionResult> {
     const statusUrl = `${this.normalizeBaseUrl(credentials.baseUrl)}/status.php`;
-    const [statusResponse, userPayload, capabilitiesPayload, webdavResponse] = await Promise.all([
-      this.fetchFn(statusUrl, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal,
-      }),
-      this.fetchOcs(credentials, '/ocs/v2.php/cloud/user', { method: 'GET', signal }),
-      this.fetchOcs(credentials, '/ocs/v2.php/cloud/capabilities', { method: 'GET', signal }),
-      this.fetchFn(this.buildWebdavUrl(credentials, '/'), {
-        method: 'PROPFIND',
-        headers: {
-          ...this.buildHeaders(credentials),
-          Depth: '0',
-        },
-        signal,
-      }),
-    ]);
-
+    const statusResponse = await this.fetchFn(statusUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal,
+    });
     const status = await this.readServerStatus(statusResponse);
+
+    // Authenticate once before any other protected endpoint is queried. This prevents
+    // one invalid password from producing several simultaneous failed logins.
+    const userPayload = await this.fetchOcs(
+      credentials,
+      '/ocs/v2.php/cloud/user',
+      { method: 'GET', signal },
+      true,
+    );
+    const capabilitiesPayload = await this.fetchOcs(
+      credentials,
+      '/ocs/v2.php/cloud/capabilities',
+      { method: 'GET', signal },
+    );
+    const webdavResponse = await this.fetchFn(this.buildWebdavUrl(credentials, '/'), {
+      method: 'PROPFIND',
+      headers: {
+        ...this.buildHeaders(credentials),
+        Depth: '0',
+      },
+      signal,
+    });
+    this.throwIfAuthenticationRejected(webdavResponse);
     if (webdavResponse.status !== 207) {
       const detail = await this.readResponseSnippet(webdavResponse);
       throw new Error(`Accès WebDAV refusé (HTTP ${webdavResponse.status}): ${detail}`);
@@ -215,6 +234,7 @@ export class OwnCloudShareService {
         headers: this.buildHeaders(credentials),
         signal,
       });
+      this.throwIfAuthenticationRejected(response);
       if (response.status === 201 || response.status === 405) {
         continue;
       }
@@ -263,6 +283,7 @@ export class OwnCloudShareService {
         signal,
       };
       const response = await this.fetchFn(this.buildWebdavUrl(credentials, remotePath), uploadInit);
+      this.throwIfAuthenticationRejected(response);
       if (response.status === 201 || response.status === 204) {
         uploaded += 1;
         continue;
@@ -289,6 +310,7 @@ export class OwnCloudShareService {
     credentials: OwnCloudCredentials,
     endpoint: string,
     init: RequestInit,
+    authenticationProbe = false,
   ): Promise<{ data: unknown; message: string | null }> {
     const response = await this.fetchFn(this.buildOcsUrl(credentials.baseUrl, endpoint), {
       ...init,
@@ -297,6 +319,9 @@ export class OwnCloudShareService {
         ...(init.headers ?? {}),
       },
     });
+    if (authenticationProbe && response.status === 403) {
+      throw new OwnCloudAuthenticationError();
+    }
     return this.readOcsPayload(response);
   }
 
@@ -370,6 +395,7 @@ export class OwnCloudShareService {
   }
 
   private async readOcsPayload(response: Response): Promise<{ data: unknown; message: string | null }> {
+    this.throwIfAuthenticationRejected(response);
     const raw = await response.text();
     let payload: unknown;
     try {
@@ -382,6 +408,9 @@ export class OwnCloudShareService {
     const ocs = this.asRecord(this.asRecord(payload).ocs);
     const meta = this.asRecord(ocs.meta);
     const statusCode = Number(meta.statuscode ?? 0);
+    if (statusCode === 997) {
+      throw new OwnCloudAuthenticationError();
+    }
     const success = response.ok && (
       meta.status === 'ok' ||
       statusCode === 100 ||
@@ -418,6 +447,12 @@ export class OwnCloudShareService {
   private async readResponseSnippet(response: Response): Promise<string> {
     const raw = await response.text().catch(() => '');
     return this.summarizeNonJson(raw);
+  }
+
+  private throwIfAuthenticationRejected(response: Response): void {
+    if (response.status === 401) {
+      throw new OwnCloudAuthenticationError();
+    }
   }
 
   private summarizeNonJson(raw: string): string {

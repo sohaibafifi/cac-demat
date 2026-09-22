@@ -1,6 +1,6 @@
 {
   "name": "cac-demat-node",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": true,
   "type": "module",
   "description": "CAC Demat - Application desktop pour préparer des packages PDF pour les rapporteurs et les membres.",
@@ -20,6 +20,7 @@
     "build:watch": "tsc --watch",
     "lint": "eslint .",
     "dev": "npm run electron",
+    "dev:debug": "npm run build && electron --inspect=9229 . --debug",
     "electron": "npm run build && electron .",
     "electron:package": "npm run build -- -mwl && electron-builder -mwl",
     "electron:package:mac": "npm run build -- --mac && electron-builder --mac",

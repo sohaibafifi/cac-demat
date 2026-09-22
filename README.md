@@ -22,6 +22,8 @@ Le workflow utilise `secrets.GITHUB_TOKEN` pour créer ou compléter automatique
 
 | Commande | Description |
 | --- | --- |
+| `npm run dev` | Compile puis lance l'application Electron en développement. |
+| `npm run dev:debug` | Compile, lance Electron, ouvre les DevTools et expose l'inspecteur du processus principal sur le port `9229`. |
 | `npm run version:patch|minor|major` | Incrémente la version SemVer dans `nodejs/package.json` et `nodejs/package-lock.json`. |
 | `npm run build` | Construit l'application Electron via `npm --prefix nodejs run electron:package`. |
 | `npm run release` | Déclenche la release Electron. |
