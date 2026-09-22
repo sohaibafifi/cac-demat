@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, realpath, stat, writeFile } from 'fs/promises
 import path from 'path';
 
 type DepositMatchStatus = 'deposited' | 'probable' | 'missing';
+type ReportVariant = 'anonyme' | 'nominatif';
 
 interface ZipDirectoryCandidate {
   directory: string;
@@ -19,6 +20,7 @@ interface ExpectedReport {
   sourceZip: string;
   normalized: string;
   tokens: string[];
+  variant: ReportVariant | null;
 }
 
 interface DepositFile {
@@ -30,6 +32,7 @@ interface DepositFile {
   relativeTimeLabel: string;
   normalized: string;
   tokens: string[];
+  variant: ReportVariant | null;
 }
 
 interface MatchedReport {
@@ -222,7 +225,7 @@ export class ReviewerDepositReportService {
     const reviewerName = this.resolveReviewerName(candidate);
     const errors: string[] = [];
     const expectedReports: ExpectedReport[] = [];
-    const deposits = await this.collectDeposits(candidate.directory, now, errors);
+    const deposits = await this.collectDeposits(candidate.directory, reviewerName, now, errors);
 
     for (const zipName of candidate.zipFiles) {
       const zipPath = path.join(candidate.directory, zipName);
@@ -261,7 +264,7 @@ export class ReviewerDepositReportService {
     };
   }
 
-  private async collectDeposits(directory: string, now: Date, errors: string[]): Promise<DepositFile[]> {
+  private async collectDeposits(directory: string, reviewerName: string, now: Date, errors: string[]): Promise<DepositFile[]> {
     let entries;
     try {
       entries = await readdir(directory, { withFileTypes: true });
@@ -280,7 +283,8 @@ export class ReviewerDepositReportService {
       const filePath = path.join(directory, entry.name);
       try {
         const fileStat = await stat(filePath);
-        const normalized = this.normalizeForMatch(entry.name);
+        const label = this.resolveDepositLabel(entry.name, reviewerName);
+        const normalized = this.normalizeForMatch(label);
         deposits.push({
           name: entry.name,
           path: filePath,
@@ -289,7 +293,8 @@ export class ReviewerDepositReportService {
           modifiedAtLabel: this.formatDateTime(fileStat.mtime),
           relativeTimeLabel: this.formatRelativeTime(fileStat.mtime, now),
           normalized,
-          tokens: this.tokenize(entry.name),
+          tokens: this.tokenize(label),
+          variant: this.resolveReportVariant(label),
         });
       } catch (error) {
         errors.push(`${entry.name}: date de dépôt indisponible (${this.formatError(error)})`);
@@ -328,6 +333,7 @@ export class ReviewerDepositReportService {
         sourceZip: zipName,
         normalized,
         tokens: this.tokenize(label),
+        variant: this.resolveReportVariant(label),
       };
     });
 
@@ -368,6 +374,7 @@ export class ReviewerDepositReportService {
           sourceZip: zipName,
           normalized: this.normalizeForMatch(label),
           tokens: this.tokenize(label),
+          variant,
         });
       }
     }
@@ -446,18 +453,24 @@ export class ReviewerDepositReportService {
     }));
 
     const usedDeposits = new Set<number>();
-    const scoredPairs: Array<{ expectedIndex: number; depositIndex: number; score: number }> = [];
+    const scoredPairs: Array<{
+      expectedIndex: number;
+      depositIndex: number;
+      score: number;
+      status: 'deposited' | 'probable';
+    }> = [];
 
     expectedReports.forEach((expected, expectedIndex) => {
       deposits.forEach((deposit, depositIndex) => {
         const score = this.scoreMatch(expected, deposit);
         if (score >= 0.55) {
-          scoredPairs.push({ expectedIndex, depositIndex, score });
+          const status = expected.variant && !deposit.variant ? 'probable' : 'deposited';
+          scoredPairs.push({ expectedIndex, depositIndex, score, status });
         }
       });
     });
 
-    scoredPairs.sort((a, b) => b.score - a.score);
+    scoredPairs.sort((a, b) => Number(b.status === 'deposited') - Number(a.status === 'deposited') || b.score - a.score);
 
     for (const pair of scoredPairs) {
       if (matches[pair.expectedIndex].deposit || usedDeposits.has(pair.depositIndex)) {
@@ -467,7 +480,7 @@ export class ReviewerDepositReportService {
       matches[pair.expectedIndex] = {
         expected: expectedReports[pair.expectedIndex],
         deposit: deposits[pair.depositIndex],
-        status: 'deposited',
+        status: pair.status,
       };
       usedDeposits.add(pair.depositIndex);
     }
@@ -479,10 +492,12 @@ export class ReviewerDepositReportService {
       .map((_deposit, index) => (usedDeposits.has(index) ? -1 : index))
       .filter((index) => index >= 0);
 
-    const fallbackCount = Math.min(unmatchedExpectedIndexes.length, freeDepositIndexes.length);
-    for (let index = 0; index < fallbackCount; index += 1) {
-      const expectedIndex = unmatchedExpectedIndexes[index];
-      const depositIndex = freeDepositIndexes[index];
+    for (const expectedIndex of unmatchedExpectedIndexes) {
+      const depositIndex = freeDepositIndexes.find((index) => !usedDeposits.has(index)
+        && this.areVariantsCompatible(expectedReports[expectedIndex], deposits[index]));
+      if (depositIndex === undefined) {
+        continue;
+      }
       matches[expectedIndex] = {
         expected: expectedReports[expectedIndex],
         deposit: deposits[depositIndex],
@@ -498,7 +513,7 @@ export class ReviewerDepositReportService {
   }
 
   private scoreMatch(expected: ExpectedReport, deposit: DepositFile): number {
-    if (!expected.normalized || !deposit.normalized) {
+    if (!this.areVariantsCompatible(expected, deposit) || !expected.normalized || !deposit.normalized) {
       return 0;
     }
 
@@ -527,6 +542,25 @@ export class ReviewerDepositReportService {
     const expectedCoverage = intersection / expectedTokens.size;
     const depositCoverage = intersection / depositTokens.size;
     return Math.max(expectedCoverage, depositCoverage * 0.8);
+  }
+
+  private areVariantsCompatible(expected: ExpectedReport, deposit: DepositFile): boolean {
+    return !expected.variant || !deposit.variant || expected.variant === deposit.variant;
+  }
+
+  private resolveReportVariant(label: string): ReportVariant | null {
+    const match = label.match(/(?:^|[\s(-])(anonyme|nominatif)\)?$/i);
+    return match ? match[1].toLowerCase() as ReportVariant : null;
+  }
+
+  private resolveDepositLabel(fileName: string, reviewerName: string): string {
+    // Downloads and edited copies commonly append a counter before the extension.
+    const extension = path.extname(fileName);
+    const baseName = this.removeExtension(fileName).replace(/(?:\s*\(\d+\))+$/, '').trim();
+    const canonicalName = `${baseName}${extension}`;
+    return /^rapport\s+ripec\s*-/i.test(baseName)
+      ? this.resolveRipecReportLabel(canonicalName, reviewerName)
+      : this.resolveAvancementReportLabel(canonicalName, reviewerName);
   }
 
   private dedupeExpectedReports(expectedReports: ExpectedReport[]): ExpectedReport[] {

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rename, rm, stat } from 'fs/promises';
+import { copyFile, mkdir, readdir, realpath, rename, rm, stat } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { runCommand } from '../../utils/process.js';
@@ -77,9 +77,12 @@ export class ZipService {
     await mkdir(path.dirname(zipPath), { recursive: true, mode: 0o755 });
 
     const archiveExists = await this.fileExists(zipPath);
-    const relativeToSource = path.relative(sourceDir, zipPath);
-    const isInsideSource = relativeToSource && !relativeToSource.startsWith('..') && !path.isAbsolute(relativeToSource);
-    const workingDirectory = isInsideSource ? path.dirname(sourceDir) : path.dirname(zipPath);
+    const [resolvedSourceDir, resolvedZipDir] = await Promise.all([
+      realpath(sourceDir),
+      realpath(path.dirname(zipPath)),
+    ]);
+    const isInsideSource = this.containsPath(resolvedSourceDir, resolvedZipDir);
+    const workingDirectory = isInsideSource ? path.dirname(resolvedSourceDir) : resolvedZipDir;
     const workingZipPath = path.join(
       workingDirectory,
       `.${path.basename(zipPath, path.extname(zipPath))}.partial-${randomUUID()}.zip`,
@@ -130,18 +133,25 @@ export class ZipService {
     options.logger?.(`${archiveExists ? 'Archive complétée' : 'Archive générée'} pour ${label ?? folderName}: ${zipPath}`);
 
     if (options.removeSource) {
-      // Only remove source if it's not the same directory as the zip file
-      const zipDir = path.dirname(zipPath);
-      const sourceDirResolved = path.resolve(sourceDir);
-      const zipDirResolved = path.resolve(zipDir);
+      const [sourceDirResolved, zipPathResolved] = await Promise.all([
+        realpath(sourceDir),
+        realpath(zipPath),
+      ]);
 
-      if (sourceDirResolved !== zipDirResolved) {
+      if (!this.containsPath(sourceDirResolved, zipPathResolved)) {
         await rm(sourceDir, { recursive: true, force: true });
         options.logger?.(`Dossier source supprimé: ${sourceDir}`);
+      } else {
+        options.logger?.(`Dossier source conservé car il contient l'archive: ${sourceDir}`);
       }
     }
 
     return true;
+  }
+
+  private containsPath(directory: string, candidate: string): boolean {
+    const relative = path.relative(directory, candidate);
+    return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
   }
 
   private resolveZipCommand(folderName: string, zipPath: string): { command: string; args: string[] } {

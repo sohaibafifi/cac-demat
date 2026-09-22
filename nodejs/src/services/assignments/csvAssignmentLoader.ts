@@ -16,6 +16,8 @@ export interface CandidateMetadata {
 export interface ReviewerAssignment {
   file: string;
   reviewers: string[];
+  /** Original column numbers, keyed by trimmed, lower-case reviewer name. */
+  reviewerNumbers?: Record<string, number>;
   source: 'csv';
   label?: string;
   candidate?: CandidateMetadata;
@@ -53,18 +55,7 @@ export class CsvAssignmentLoader {
         continue;
       }
 
-      const reviewers: string[] = [];
-      for (const [key, value] of Object.entries(row)) {
-        const normalizedKey = normalizeHeader(key);
-        if (!normalizedKey.startsWith('reviewer') && !normalizedKey.startsWith('rapporteur')) {
-          continue;
-        }
-
-        const candidate = value?.toString().trim() ?? '';
-        if (candidate !== '') {
-          reviewers.push(candidate);
-        }
-      }
+      const { reviewers, reviewerNumbers } = this.extractReviewersFromRow(this.normalizeSpreadsheetRow(row));
 
       if (reviewers.length === 0) {
         continue;
@@ -74,7 +65,8 @@ export class CsvAssignmentLoader {
       const hasCandidateName = Boolean(candidate.firstName || candidate.lastName);
       assignments.push({
         file,
-        reviewers: Array.from(new Set(reviewers)),
+        reviewers,
+        reviewerNumbers,
         source: 'csv',
         label: hasCandidateName ? this.buildDisplayName(candidate.firstName ?? '', candidate.lastName ?? '') : file,
         ...(hasCandidateMetadata(candidate) ? { candidate } : {}),
@@ -86,7 +78,7 @@ export class CsvAssignmentLoader {
 
   private async reviewersFromWorkbook(pathname: string, availableFiles: string[]): Promise<ReviewerAssignment[]> {
     try {
-      const workbook = XLSX.readFile(pathname, { cellDates: false });
+      const workbook = XLSX.readFile(pathname, { cellDates: false, cellStyles: true });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
         return [];
@@ -106,7 +98,7 @@ export class CsvAssignmentLoader {
         const candidate = this.extractCandidateFromSpreadsheetRow(row);
         const lastName = candidate.lastName ?? '';
         const firstName = candidate.firstName ?? '';
-        const reviewers = this.extractReviewersFromRow(row);
+        const { reviewers, reviewerNumbers } = this.extractReviewersFromRow(row);
 
         if (reviewers.length === 0) {
           continue;
@@ -122,6 +114,7 @@ export class CsvAssignmentLoader {
         assignments.push({
           file: matchedFile ?? fallbackFile,
           reviewers,
+          reviewerNumbers,
           source: 'csv',
           label: this.buildDisplayName(firstName, lastName),
           candidate,
@@ -224,7 +217,7 @@ export class CsvAssignmentLoader {
 
   private async membersFromWorkbook(pathname: string, availableFiles: string[]): Promise<MemberAssignment[]> {
     try {
-      const workbook = XLSX.readFile(pathname, { cellDates: false });
+      const workbook = XLSX.readFile(pathname, { cellDates: false, cellStyles: true });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
         return [];
@@ -361,20 +354,34 @@ export class CsvAssignmentLoader {
     });
   }
 
-  private extractReviewersFromRow(row: Map<string, string>): string[] {
+  private extractReviewersFromRow(row: Map<string, string>): Pick<ReviewerAssignment, 'reviewers' | 'reviewerNumbers'> {
     const reviewers: string[] = [];
+    const numbers = new Map<string, number>();
+    let columnNumber = 0;
 
     for (const [key, value] of row.entries()) {
+      if (!key.startsWith('rapporteur') && !key.startsWith('reviewer')) {
+        continue;
+      }
+
+      columnNumber += 1;
       if (!value) {
         continue;
       }
 
-      if (key.startsWith('rapporteur') || key.startsWith('reviewer')) {
-        reviewers.push(value);
+      reviewers.push(value);
+      const reviewerKey = value.toLowerCase();
+      if (!numbers.has(reviewerKey)) {
+        const suffix = key.match(/^(?:rapporteur|reviewer)(?:n|no|numero|number)?(\d+)$/)?.[1];
+        const explicitNumber = Number(suffix);
+        numbers.set(
+          reviewerKey,
+          Number.isSafeInteger(explicitNumber) && explicitNumber > 0 ? explicitNumber : columnNumber,
+        );
       }
     }
 
-    return Array.from(new Set(reviewers));
+    return { reviewers: Array.from(new Set(reviewers)), reviewerNumbers: Object.fromEntries(numbers) };
   }
 
   private buildFallbackFileName(firstName: string, lastName: string): string {

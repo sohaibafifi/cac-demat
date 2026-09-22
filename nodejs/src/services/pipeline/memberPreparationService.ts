@@ -112,6 +112,7 @@ export class MemberPreparationService {
     inventory: PdfInventoryEntry[],
     logger?: PipelineLogger,
   ): string[] {
+    const exactLookup = new Map(inventory.map((e) => [e.relative, e.relative]));
     const lookup = new Map(inventory.map((e) => [e.relative.toLowerCase(), e.relative]));
     const resolved: string[] = [];
 
@@ -129,6 +130,10 @@ export class MemberPreparationService {
       }
 
       // Exact file match
+      if (exactLookup.has(trimmed)) {
+        resolved.push(exactLookup.get(trimmed)!);
+        continue;
+      }
       if (lookup.has(lower)) {
         resolved.push(lookup.get(lower)!);
         continue;
@@ -150,7 +155,8 @@ export class MemberPreparationService {
 
       // Wildcard match
       if (trimmed.includes('*')) {
-        const regex = new RegExp('^' + trimmed.replace(/\*/g, '.*') + '$', 'i');
+        const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp('^' + escaped.replace(/\\\*/g, '.*') + '$', 'i');
         const matches = inventory.filter((e) => regex.test(e.relative));
 
         if (matches.length > 0) {

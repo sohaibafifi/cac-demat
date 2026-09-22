@@ -1,4 +1,4 @@
-import { mkdir, readdir } from 'fs/promises';
+import { mkdir, readdir, realpath } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
@@ -14,6 +14,22 @@ const toPdfBasename = (filename: string): string => {
     return filename;
   }
   return filename.slice(0, -ext.length) + '.pdf';
+};
+
+const filesystemPathKey = (filename: string): string => {
+  // Windows and the usual macOS volumes compare file names without case.
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? filename.normalize('NFC').toLowerCase()
+    : filename;
+};
+
+const resolveExistingPath = async (filename: string): Promise<string> => {
+  try {
+    return await realpath(filename);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return path.resolve(filename);
+  }
 };
 
 export interface PdfInventoryEntry {
@@ -76,7 +92,14 @@ export class PdfPackageProcessor {
   ): Promise<PreparationStats> {
     throwIfPipelineCancelled(abortSignal);
     const entries = inventory ?? (await this.collectPdfFiles(resolvedSourceDir, abortSignal));
-    const lookup = new Map(entries.map((e) => [e.relative.toLowerCase(), e]));
+    const lookup = new Map(entries.map((e) => [e.relative, e]));
+    const foldedLookup = new Map<string, PdfInventoryEntry[]>();
+    for (const entry of entries) {
+      const key = entry.relative.toLowerCase();
+      const matches = foldedLookup.get(key) ?? [];
+      matches.push(entry);
+      foldedLookup.set(key, matches);
+    }
 
     const collectionFolder = collectionName.trim()
       ? NameSanitizer.sanitize(collectionName.trim(), 'collection')
@@ -91,6 +114,9 @@ export class PdfPackageProcessor {
     };
     const missing = new Set<string>();
     const tasks: Array<() => Promise<void>> = [];
+    const destinations = new Map<string, { source: string; file: PdfInventoryEntry; recipient: string }>();
+    const realDirectories = new Map<string, Promise<string>>();
+    const realSources = new Map<string, Promise<string>>();
     const processedByRecipient = new Map<string, number>();
     const useDefaultLogging = !afterFileProcessed;
     const restrictionEnabled = activeStages ? activeStages.includes('restriction') : true;
@@ -115,7 +141,12 @@ export class PdfPackageProcessor {
 
       for (const relative of files) {
         throwIfCancelled();
-        const file = lookup.get(relative.toLowerCase());
+        const matches = foldedLookup.get(relative.toLowerCase());
+        const file = lookup.get(relative) ?? (matches?.length === 1 ? matches[0] : undefined);
+
+        if (!file && matches && matches.length > 1) {
+          throw new Error(`Nom de fichier ambigu: « ${relative} » correspond à ${matches.map((entry) => `« ${entry.relative} »`).join(', ')}.`);
+        }
 
         if (!file) {
           logger?.(`Warning: Source file ${relative} not found. Skipping for ${name}.`);
@@ -124,6 +155,28 @@ export class PdfPackageProcessor {
         }
 
         const destinationDir = file.relativeDir ? path.join(baseDir, file.relativeDir) : baseDir;
+        let realDirectory = realDirectories.get(destinationDir);
+        if (!realDirectory) {
+          realDirectory = mkdir(destinationDir, { recursive: true, mode: 0o755 }).then(() => realpath(destinationDir));
+          realDirectories.set(destinationDir, realDirectory);
+        }
+        const destinationPath = path.join(await realDirectory, file.basename);
+        const destinationKey = filesystemPathKey(await resolveExistingPath(destinationPath));
+        let realSource = realSources.get(file.path);
+        if (!realSource) {
+          realSource = resolveExistingPath(file.path);
+          realSources.set(file.path, realSource);
+        }
+        const sourceKey = await realSource;
+        const previous = destinations.get(destinationKey);
+        if (previous) {
+          if (previous.source === sourceKey) continue;
+          throw new Error(
+            `Collision de fichiers: « ${previous.file.relative} » pour « ${previous.recipient} » et « ${file.relative} » pour « ${name} » produisent le même PDF « ${destinationPath} ». Renommez l'un des fichiers sources avant de relancer la préparation.`,
+          );
+        }
+        destinations.set(destinationKey, { source: sourceKey, file, recipient: name });
+
         const context = new PdfProcessingContext(
           file.path,
           file.relative,

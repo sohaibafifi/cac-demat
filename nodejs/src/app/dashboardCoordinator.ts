@@ -584,11 +584,36 @@ export class DashboardCoordinator {
         map.set(fileKey, reviewerMap);
       }
 
-      assignment.reviewers.forEach((reviewer, index) => {
+      assignment.reviewers.forEach((reviewer) => {
         const key = this.normalizeReviewerKey(reviewer);
         if (!key || reviewerMap!.has(key)) return;
-        reviewerMap!.set(key, index + 1);
+        const number = assignment.reviewerNumbers?.[key];
+        if (number !== undefined && Number.isSafeInteger(number) && number > 0) {
+          reviewerMap!.set(key, number);
+        }
       });
+    }
+
+    // Reserve all imported column numbers before assigning legacy or manual entries.
+    for (const assignment of [...this.reviewersFromCsv, ...this.reviewersManual]) {
+      const fileKey = assignment.file.trim().toLowerCase();
+      if (!fileKey) continue;
+
+      let reviewerMap = map.get(fileKey);
+      if (!reviewerMap) {
+        reviewerMap = new Map<string, number>();
+        map.set(fileKey, reviewerMap);
+      }
+
+      const usedNumbers = new Set(reviewerMap.values());
+      for (const reviewer of assignment.reviewers) {
+        const key = this.normalizeReviewerKey(reviewer);
+        if (!key || reviewerMap.has(key)) continue;
+        let number = 1;
+        while (usedNumbers.has(number)) number += 1;
+        reviewerMap.set(key, number);
+        usedNumbers.add(number);
+      }
     }
 
     return map;
@@ -905,6 +930,7 @@ export class DashboardCoordinator {
     const merged = new Map<string, {
       file: string;
       reviewers: Set<string>;
+      reviewerNumbers: Map<string, number>;
       label?: string;
       candidate?: CandidateMetadata;
     }>();
@@ -919,7 +945,12 @@ export class DashboardCoordinator {
 
       const key = file.toLowerCase();
       if (!merged.has(key)) {
-        merged.set(key, { file, reviewers: new Set<string>(), label: assignment.label });
+        merged.set(key, {
+          file,
+          reviewers: new Set<string>(),
+          reviewerNumbers: new Map<string, number>(),
+          label: assignment.label,
+        });
       }
 
       const entry = merged.get(key)!;
@@ -927,6 +958,11 @@ export class DashboardCoordinator {
         const trimmed = reviewer?.trim();
         if (trimmed) {
           entry.reviewers.add(trimmed);
+          const reviewerKey = this.normalizeReviewerKey(trimmed);
+          const number = assignment.reviewerNumbers?.[reviewerKey];
+          if (number !== undefined && Number.isSafeInteger(number) && number > 0 && !entry.reviewerNumbers.has(reviewerKey)) {
+            entry.reviewerNumbers.set(reviewerKey, number);
+          }
         }
       });
 
@@ -940,6 +976,7 @@ export class DashboardCoordinator {
     this.reviewersFromCsv = Array.from(merged.values()).map((entry) => ({
       file: entry.file,
       reviewers: Array.from(entry.reviewers),
+      ...(entry.reviewerNumbers.size > 0 ? { reviewerNumbers: Object.fromEntries(entry.reviewerNumbers) } : {}),
       source: 'csv' as const,
       label: entry.label,
       ...(entry.candidate && Object.keys(entry.candidate).length > 0 ? { candidate: entry.candidate } : {}),

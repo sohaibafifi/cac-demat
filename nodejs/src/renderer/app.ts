@@ -1874,7 +1874,7 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
       shareType: 'user',
       permissions: Number(elements.ocPermissions.value),
       mode: modeSelect.value,
-      sendNotification: elements.ocNotifyEmail.checked && !elements.ocNotifyEmail.disabled,
+      sendNotification: elements.ocNotifyEmail.checked && sharingMailNotificationAvailable === true,
     });
     const uploaded = response.uploaded
       ? ` (fichiers envoyés: ${response.uploaded.uploaded}/${response.uploaded.total})`

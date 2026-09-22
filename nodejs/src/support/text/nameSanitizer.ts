@@ -4,12 +4,8 @@ export class NameSanitizer {
    */
   static sanitize(name: string, fallback: string): string {
     const trimmed = name.trim();
-    if (trimmed === '') {
-      return fallback;
-    }
-
     const sanitised = trimmed.replace(/[^\p{L}\p{N}._-]+/gu, '_');
-    return sanitised === '' ? fallback : sanitised;
+    return this.validate(sanitised === '' ? fallback : sanitised);
   }
 
   /**
@@ -19,15 +15,18 @@ export class NameSanitizer {
    */
   static sanitizeForFileName(name: string, fallback: string): string {
     const trimmed = name.trim();
-    if (trimmed === '') {
-      return fallback;
-    }
-
     const withoutInvalidChars = trimmed
       .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
       .replace(/\s+/g, ' ')
       .trim();
 
-    return withoutInvalidChars === '' ? fallback : withoutInvalidChars;
+    return this.validate(withoutInvalidChars === '' ? fallback : withoutInvalidChars);
+  }
+
+  private static validate(value: string): string {
+    if (/^\.+$/.test(value)) {
+      throw new Error('Nom invalide : un nom de CAC ou de destinataire ne peut pas être composé uniquement de points.');
+    }
+    return value;
   }
 }

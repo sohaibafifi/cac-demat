@@ -222,7 +222,10 @@ export class ReviewerPreparationService {
           continue;
         }
 
-        const reviewerNumber = reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ?? 1;
+        const reviewerNumber =
+          this.resolvePackageReviewerNumber(pkg, file.relative) ??
+          reviewerNumbersByFile.get(file.relative.toLowerCase())?.get(recipient) ??
+          1;
 
         try {
           const baseDir = this.resolveRecipientBaseDir(recipient, outputDir, collectionName);
@@ -275,9 +278,24 @@ export class ReviewerPreparationService {
           reviewerMap = new Map<string, number>();
           result.set(key, reviewerMap);
         }
-        if (!reviewerMap.has(recipient)) {
-          reviewerMap.set(recipient, reviewerMap.size + 1);
+        const explicitNumber = this.resolvePackageReviewerNumber(pkg, file);
+        if (explicitNumber !== undefined && !reviewerMap.has(recipient)) {
+          reviewerMap.set(recipient, explicitNumber);
         }
+      }
+    }
+
+    for (const pkg of packages) {
+      const recipient = pkg.name.trim();
+      if (!recipient) continue;
+
+      for (const file of pkg.files) {
+        const reviewerMap = result.get(file.trim().toLowerCase());
+        if (!reviewerMap || reviewerMap.has(recipient)) continue;
+        const usedNumbers = new Set(reviewerMap.values());
+        let number = 1;
+        while (usedNumbers.has(number)) number += 1;
+        reviewerMap.set(recipient, number);
       }
     }
 
@@ -290,7 +308,8 @@ export class ReviewerPreparationService {
   ): number | undefined {
     const map = pkg.reviewerNumberByFile;
     if (!map) return undefined;
-    return map[fileRelative] ?? map[fileRelative.toLowerCase()];
+    const number = map[fileRelative] ?? map[fileRelative.toLowerCase()];
+    return Number.isSafeInteger(number) && number > 0 ? number : undefined;
   }
 
   private resolveTargetName(file: PdfInventoryEntry): string {
