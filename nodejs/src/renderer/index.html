@@ -89,7 +89,7 @@
 
       main {
         flex: 1;
-        width: 100%;
+        width: calc(100% - 3.2rem);
         max-width: 960px;
         margin: 0 auto 1.2rem auto;
         padding: 1rem 1.6rem 0.5rem 1.6rem;
@@ -1415,9 +1415,12 @@ Marie Martin;.;*.pdf</pre>
             <h2>Partage ownCloud</h2>
             <p>Préparez puis partagez les dossiers des rapporteurs.</p>
           </div>
-          <div id="oc-test-result" class="sharing-connection-status" data-state="idle">
-            <span class="sharing-status-dot" aria-hidden="true"></span>
-            <span data-role="connection-text">Connexion non testée</span>
+          <div class="sharing-actions">
+            <div id="oc-test-result" class="sharing-connection-status" data-state="idle">
+              <span class="sharing-status-dot" aria-hidden="true"></span>
+              <span data-role="connection-text">Connexion non testée</span>
+            </div>
+            <button type="button" id="oc-reset" class="secondary" title="Effacer la sélection et les résultats, puis recharger la configuration enregistrée.">Réinitialiser l’onglet</button>
           </div>
         </div>
 

@@ -124,7 +124,7 @@ Pendant le téléversement, chaque ligne affiche le fichier en cours, le nombre 
 
 ### 3. Destinataires
 
-L'application détecte les sous-dossiers et propose un username ownCloud à partir de leur nom. Par exemple, `Dupont_Jean` devient `jean.dupont`. Le username reste modifiable avant le partage.
+L'application détecte les sous-dossiers et propose un username ownCloud en conservant l'ordre de leur nom. Par exemple, `Pierre_Marquis` devient `pierre.marquis`. Les accents sont retirés et les tirets internes supprimés : `Jean-Pierre_Dupont` devient `jeanpierre.dupont`. Le username reste modifiable avant le partage, notamment si l'ordre du nom et du prénom dans le dossier diffère de celui de l'identifiant ownCloud.
 
 Vous pouvez :
 
@@ -136,10 +136,16 @@ Vous pouvez :
 Les résultats sont affichés directement dans chaque ligne :
 
 *   **Vert** : téléversement et partage réussis ;
-*   **Orange** : partage réussi, mais notification par e-mail non envoyée ;
+*   **Orange** : partage réussi, mais demande de notification par e-mail refusée ou non confirmée par le serveur ;
 *   **Rouge** : partage impossible, par exemple lorsque le username ownCloud est introuvable.
 
-Un échec de notification ne supprime pas le partage qui vient d'être créé. L'application ne renvoie pas une notification lorsque ownCloud indique qu'elle a déjà été envoyée.
+Lorsque la case **"Envoyer une notification par e-mail"** est cochée, chaque action de partage demande une notification, y compris pour un partage existant dont ownCloud signale un envoi précédent. Le message de confirmation signifie que la demande a été acceptée par le serveur ; il ne prouve pas la réception de l'e-mail par le destinataire. Un échec de notification ne supprime pas le partage.
+
+### 4. Réinitialiser l'onglet
+
+Le bouton **"Réinitialiser l’onglet"** efface la sélection du dossier local, les destinataires, les résultats, la validation de la connexion et le mot de passe en cours de saisie. Il recharge la configuration enregistrée et conserve les identifiants stockés. Testez à nouveau la connexion avant de partager.
+
+Cette action ne supprime aucun partage ni fichier distant. Le bouton est indisponible pendant une opération en cours.
 
 ## Reporting des Dépôts Rapporteurs
 

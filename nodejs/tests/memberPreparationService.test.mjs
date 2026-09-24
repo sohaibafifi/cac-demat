@@ -20,8 +20,8 @@ async function resolveMembers(t, filenames, members) {
   }, {
     async zipAll() { throw new Error('ZIP is disabled in this test'); },
   });
-  await service.prepare(members, root, path.join(root, 'output'), '', undefined, undefined, undefined, false);
-  return resolved;
+  const stats = await service.prepare(members, root, path.join(root, 'output'), '', undefined, undefined, undefined, false);
+  return { resolved, stats };
 }
 
 test('member wildcards treat regex metacharacters as literal file-name characters', async (t) => {
@@ -38,7 +38,7 @@ test('member wildcards treat regex metacharacters as literal file-name character
     ['folder/*.pdf', 'folder/CV.pdf', 'folder/CVxpdf'],
     ['A\\B/*.pdf', 'A\\B/CV.pdf', 'AB/CV.pdf'],
   ];
-  const resolved = await resolveMembers(t, cases.flatMap(([, match, nonMatch]) => [match, nonMatch]), cases.map(([pattern], index) => ({
+  const { resolved } = await resolveMembers(t, cases.flatMap(([, match, nonMatch]) => [match, nonMatch]), cases.map(([pattern], index) => ({
     name: `Member ${index}`,
     files: [pattern],
   })));
@@ -46,7 +46,7 @@ test('member wildcards treat regex metacharacters as literal file-name character
 });
 
 test('literal files, folders, root selection and overlapping wildcards retain their behavior', async (t) => {
-  const resolved = await resolveMembers(t, ['CV.pdf', 'A+B/CV.pdf', 'A+B/nested/Letter.pdf', 'other/CV.pdf'], [
+  const { resolved } = await resolveMembers(t, ['CV.pdf', 'A+B/CV.pdf', 'A+B/nested/Letter.pdf', 'other/CV.pdf'], [
     { name: 'Exact', files: ['a+b/cv.PDF'] },
     { name: 'Folder', files: ['A+B/'] },
     { name: 'Root', files: ['.'] },
@@ -58,4 +58,24 @@ test('literal files, folders, root selection and overlapping wildcards retain th
     { name: 'Root', files: ['CV.pdf'] },
     { name: 'Overlap', files: ['A+B/CV.pdf', 'A+B/nested/Letter.pdf'] },
   ]);
+});
+
+test('unresolved member files and patterns remain in the generation statistics', async (t) => {
+  const { resolved, stats } = await resolveMembers(t, ['nested/Present.pdf'], [
+    { name: 'Alice', files: ['nested/Present.pdf', 'Missing.pdf', 'other/*.pdf'] },
+    { name: 'Bob', files: ['.', 'Missing.pdf'] },
+  ]);
+  assert.deepEqual(resolved, [{ name: 'Alice', files: ['nested/Present.pdf'] }]);
+  assert.equal(stats.requestedRecipients, 2);
+  assert.deepEqual(stats.missingFiles, ['.', 'Missing.pdf', 'other/*.pdf']);
+});
+
+test('a completely unresolved member request returns its missing files instead of an empty success', async (t) => {
+  const { resolved, stats } = await resolveMembers(t, ['Present.pdf'], [
+    { name: 'Alice', files: ['Missing.pdf'] },
+  ]);
+  assert.deepEqual(resolved, []);
+  assert.equal(stats.requestedRecipients, 1);
+  assert.equal(stats.processedFiles, 0);
+  assert.deepEqual(stats.missingFiles, ['Missing.pdf']);
 });

@@ -215,8 +215,10 @@ export class OwnCloudShareService {
       },
     );
     const data = this.asRecord(payload.data);
-    if (data.status && data.status !== 'success') {
-      throw new Error(payload.message ?? 'ownCloud n’a pas pu envoyer la notification par e-mail.');
+    if (data.status !== 'success') {
+      throw new Error(payload.message ?? (data.status === 'error'
+        ? 'ownCloud n’a pas pu envoyer la notification par e-mail.'
+        : 'Réponse ownCloud invalide : aucune confirmation d’envoi de la notification par e-mail.'));
     }
   }
 

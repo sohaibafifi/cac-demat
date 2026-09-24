@@ -49,3 +49,24 @@ test('legacy and manual assignments use free numbers while preserving explicit n
   assert.deepEqual(packageNumbers(coordinator, 'Candidate.pdf'), { Alice: 1, Bruno: 3, Zoe: 2 });
   assert.deepEqual(packageNumbers(coordinator, 'Other.pdf'), { Alice: 2, Zoe: 1 });
 });
+
+for (const mode of ['members', 'reviewers']) {
+  test(`${mode} completion exposes missing PDFs instead of reporting success`, async () => {
+    const stats = { requestedRecipients: 1, processedRecipients: 0, processedFiles: 0, missingFiles: ['Missing.pdf'], errors: [] };
+    const service = { async prepare() { return stats; } };
+    const workspace = { async resolveOutputPath() { return '/unused/output'; } };
+    const coordinator = new DashboardCoordinator(new CsvAssignmentLoader(), workspace, service, service);
+    coordinator.folder = '/unused/source';
+    coordinator.cacName = 'CAC';
+    coordinator.membersManual = [{ name: 'Alice', files: ['Missing.pdf'], source: 'manual' }];
+    coordinator.reviewersManual = [{ file: 'Missing.pdf', reviewers: ['Alice'], source: 'manual' }];
+    await coordinator.executeRun(mode);
+    assert.equal(coordinator.status, 'Terminé avec erreurs');
+    assert.equal(coordinator.lastRunStats.missing, 1);
+    assert.equal(coordinator.lastRunStats.files, 0);
+    assert.equal(coordinator.runErrors.length, 1);
+    assert.match(coordinator.runErrors[0], /Missing\.pdf/);
+    assert.match(coordinator.runErrors[0], /Aucun PDF généré/);
+    assert.doesNotMatch(coordinator.log, /terminé avec succès/);
+  });
+}

@@ -254,6 +254,7 @@ let busy = false;
 let assignmentTab: 'reviewers' | 'members' | 'reporting' | 'sharing' = 'reviewers';
 let advancedMode = false;
 let lastRunNotificationId: number | null = null;
+let lastRunFailureNotification: string | null = null;
 let progressStartedAt: number | null = null;
 let lastProgressElapsedMs: number | null = null;
 let progressTickerId: number | null = null;
@@ -326,6 +327,7 @@ const elements = {
   ocNotifyEmail: document.getElementById('oc-notify-email') as HTMLInputElement,
   ocNotifyEmailControl: document.getElementById('oc-notify-email-control') as HTMLElement,
   ocConnect: document.getElementById('oc-connect') as HTMLButtonElement,
+  ocReset: document.getElementById('oc-reset') as HTMLButtonElement,
   ocTestResult: document.getElementById('oc-test-result') as HTMLElement,
   ocSecurityNote: document.getElementById('oc-security-note') as HTMLElement,
   ocPickFolder: document.getElementById('oc-pick-folder') as HTMLButtonElement,
@@ -493,13 +495,26 @@ function buildCompletionMessage(stats: NonNullable<CoordinatorState['lastRunStat
   }
 
   return [
-    `Préparation ${modeLabel} ${stats.errors > 0 ? 'terminée avec erreurs' : 'terminée'}.`,
+    `Préparation ${modeLabel} ${stats.errors > 0 || stats.missing > 0 ? 'terminée avec erreurs' : 'terminée'}.`,
     segments.join(', '),
     `Dossier: ${stats.outputDir}`,
   ].join('\n');
 }
 
 function notifyCompletionIfNeeded(state: CoordinatorState): void {
+  if (state.running) {
+    lastRunFailureNotification = null;
+    return;
+  }
+  if (state.status === 'Erreur') {
+    const detail = state.runErrors.join('\n\n') || 'Consultez le journal pour connaître la cause de l’échec.';
+    if (lastRunFailureNotification !== detail) {
+      lastRunFailureNotification = detail;
+      void notifyRunFailure(detail);
+    }
+    return;
+  }
+  lastRunFailureNotification = null;
   if (!state.lastRunStats || (state.status !== 'Terminé' && state.status !== 'Terminé avec erreurs')) {
     return;
   }
@@ -517,7 +532,7 @@ function notifyCompletionIfNeeded(state: CoordinatorState): void {
     if (api?.showMessageBox) {
       const [headline, ...rest] = message.split('\n');
       const detail = rest.join('\n').trim();
-      const hasErrors = lastRunStats.errors > 0;
+      const hasErrors = lastRunStats.errors > 0 || lastRunStats.missing > 0;
       const options = {
         type: hasErrors ? ('warning' as const) : ('info' as const),
         buttons: ['Fermer'],
@@ -572,6 +587,25 @@ function notifyCompletionIfNeeded(state: CoordinatorState): void {
       console.warn('[renderer] Notification non disponible', error);
     }
   }
+}
+
+async function notifyRunFailure(detail: string): Promise<void> {
+  const api = await resolveElectronApi();
+  if (api?.showMessageBox) {
+    try {
+      await api.showMessageBox({
+        type: 'error',
+        buttons: ['Fermer'],
+        title: 'Échec de la préparation',
+        message: 'La préparation n’a pas abouti.',
+        detail,
+      });
+      return;
+    } catch (error) {
+      console.warn('[renderer] Impossible d’afficher l’erreur de préparation', error);
+    }
+  }
+  if (typeof alert === 'function') alert(`La préparation n’a pas abouti.\n\n${detail}`);
 }
 
 function updateActionStates(): void {
@@ -1495,6 +1529,7 @@ type OwnCloudConfigDescription = {
 let sharingFolder: string | null = null;
 let sharingRecipients: SharingRecipient[] = [];
 let sharingPanelLoaded = false;
+let sharingPanelBusy = false;
 let sharingOperationActive = false;
 let sharingBatchCancelled = false;
 let sharingConnectionReady = false;
@@ -1620,10 +1655,11 @@ function unblockOwnCloudAuthentication(): void {
 }
 
 async function initSharingPanel(): Promise<void> {
-  if (sharingPanelLoaded) return;
-  sharingPanelLoaded = true;
+  if (sharingPanelLoaded || sharingPanelBusy) return;
   const api = window.electronAPI;
   if (!api?.ownCloudGetConfig) return;
+  sharingPanelBusy = true;
+  updateSharingActionStates();
   try {
     const config = await api.ownCloudGetConfig() as OwnCloudConfigDescription;
     elements.ocBaseUrl.value = config.baseUrl ?? '';
@@ -1638,10 +1674,31 @@ async function initSharingPanel(): Promise<void> {
       'idle',
       config.hasPassword ? 'Configuration enregistrée, connexion à tester' : 'Connexion non configurée',
     );
-    updateSharingActionStates();
+    sharingPanelLoaded = true;
   } catch (error) {
     setOwnCloudConnectionStatus('error', `Configuration illisible: ${formatError(error)}`);
+  } finally {
+    sharingPanelBusy = false;
+    updateSharingActionStates();
   }
+}
+
+async function handleSharingReset(): Promise<void> {
+  if (sharingOperationActive || sharingPanelBusy) return;
+  sharingFolder = null;
+  sharingRecipients = [];
+  sharingBatchCancelled = false;
+  sharingConnectionReady = false;
+  sharingAuthenticationBlocked = false;
+  sharingPanelLoaded = false;
+  elements.ocPassword.value = '';
+  elements.ocFolderPath.textContent = 'Aucun dossier sélectionné';
+  elements.ocFolderPath.dataset.empty = 'true';
+  setOwnCloudMailNotificationAvailability(null);
+  setOwnCloudConnectionStatus('idle', 'Connexion non testée');
+  setSharingSummary('idle', 'Onglet réinitialisé. Testez la connexion puis choisissez un dossier local.');
+  renderSharingRecipients();
+  await initSharingPanel();
 }
 
 async function saveSharingConfig(): Promise<boolean> {
@@ -1671,17 +1728,14 @@ async function saveSharingConfig(): Promise<boolean> {
 
 async function handleSharingConnect(): Promise<void> {
   const api = window.electronAPI;
-  if (!api?.ownCloudTest || sharingAuthenticationBlocked) return;
+  if (!api?.ownCloudTest || sharingAuthenticationBlocked || sharingOperationActive || sharingPanelBusy) return;
+  sharingPanelBusy = true;
   sharingConnectionReady = false;
   setOwnCloudMailNotificationAvailability(null);
   updateSharingActionStates();
   setOwnCloudConnectionStatus('testing', 'Connexion en cours...');
-  elements.ocConnect.disabled = true;
-  if (!await saveSharingConfig()) {
-    elements.ocConnect.disabled = false;
-    return;
-  }
   try {
+    if (!await saveSharingConfig()) return;
     const result = await api.ownCloudTest();
     const server = [result.productName, result.serverVersion].filter(Boolean).join(' ');
     const sharing = result.sharingApiEnabled === false ? 'partage indisponible' : 'partage disponible';
@@ -1705,17 +1759,19 @@ async function handleSharingConnect(): Promise<void> {
       setOwnCloudConnectionStatus('error', formatError(error));
     }
   } finally {
-    elements.ocConnect.disabled = false;
+    sharingPanelBusy = false;
     updateSharingActionStates();
   }
 }
 
 async function handleSharingPickFolder(): Promise<void> {
   const api = window.electronAPI;
-  if (!api?.selectFolder || !api?.ownCloudScanFolder) return;
-  const folder = await api.selectFolder();
-  if (!folder) return;
+  if (!api?.selectFolder || !api?.ownCloudScanFolder || sharingOperationActive || sharingPanelBusy) return;
+  sharingPanelBusy = true;
+  updateSharingActionStates();
   try {
+    const folder = await api.selectFolder();
+    if (!folder) return;
     const result = await api.ownCloudScanFolder(folder);
     sharingFolder = result.folder;
     sharingRecipients = result.recipients;
@@ -1727,6 +1783,9 @@ async function handleSharingPickFolder(): Promise<void> {
     elements.ocFolderPath.dataset.empty = 'true';
     sharingRecipients = [];
     renderSharingRecipients();
+  } finally {
+    sharingPanelBusy = false;
+    updateSharingActionStates();
   }
 }
 
@@ -1803,15 +1862,16 @@ function computeDefaultRemotePath(recipientName: string): string {
 }
 
 function updateSharingActionStates(): void {
-  const sharingDisabled = sharingOperationActive || !sharingConnectionReady;
+  const sharingDisabled = sharingOperationActive || sharingPanelBusy || !sharingConnectionReady;
   elements.ocShareAll.disabled = sharingDisabled || sharingRecipients.length === 0;
   elements.ocCancel.disabled = !sharingOperationActive;
-  elements.ocPickFolder.disabled = sharingOperationActive;
-  elements.ocConnect.disabled = sharingOperationActive || sharingAuthenticationBlocked;
-  elements.ocNotifyEmail.disabled = sharingOperationActive || sharingMailNotificationAvailable !== true;
+  elements.ocPickFolder.disabled = sharingOperationActive || sharingPanelBusy;
+  elements.ocConnect.disabled = sharingOperationActive || sharingPanelBusy || sharingAuthenticationBlocked;
+  elements.ocReset.disabled = sharingOperationActive || sharingPanelBusy;
+  elements.ocNotifyEmail.disabled = sharingOperationActive || sharingPanelBusy || sharingMailNotificationAvailable !== true;
   elements.ocNotifyEmailControl.dataset.disabled = String(elements.ocNotifyEmail.disabled);
-  if (sharingOperationActive) {
-    elements.ocNotifyEmailControl.title = 'Une opération de partage est en cours.';
+  if (sharingOperationActive || sharingPanelBusy) {
+    elements.ocNotifyEmailControl.title = 'Une opération ownCloud est en cours.';
   } else if (sharingMailNotificationAvailable === false) {
     elements.ocNotifyEmailControl.title = 'Les notifications par e-mail sont désactivées sur le serveur ownCloud.';
   } else if (sharingMailNotificationAvailable === null) {
@@ -1891,14 +1951,11 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
     const notification = response.notification as {
       requested?: boolean;
       sent?: boolean;
-      alreadySent?: boolean;
       error?: string | null;
     } | undefined;
     const notificationResult = notification?.sent
-      ? ' Notification e-mail envoyée.'
-      : notification?.alreadySent
-        ? ' Notification e-mail déjà envoyée.'
-        : '';
+      ? ' Demande de notification acceptée par ownCloud.'
+      : '';
     const shareResult = `Partage disponible pour ${response.share.shareWith}.${reused}${uploaded}${notificationResult}`;
     if (notification?.error) {
       setSharingRecipientState(
@@ -1929,7 +1986,7 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
 }
 
 async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient): Promise<void> {
-  if (sharingOperationActive || !sharingConnectionReady) return;
+  if (sharingOperationActive || sharingPanelBusy || !sharingConnectionReady) return;
   sharingBatchCancelled = false;
   setSharingOperationActive(true);
   try {
@@ -1951,7 +2008,7 @@ async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient
 }
 
 async function handleSharingShareAll(): Promise<void> {
-  if (sharingOperationActive || !sharingConnectionReady) return;
+  if (sharingOperationActive || sharingPanelBusy || !sharingConnectionReady) return;
   const rows = Array.from(elements.ocRecipientsList.querySelectorAll<HTMLElement>('[data-recipient]'));
   let successes = 0;
   let warnings = 0;
@@ -2434,6 +2491,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sharing panel actions
   elements.ocConnect.addEventListener('click', () => { void handleSharingConnect(); });
+  elements.ocReset.addEventListener('click', () => { void handleSharingReset(); });
   elements.ocBaseUrl.addEventListener('input', unblockOwnCloudAuthentication);
   elements.ocLogin.addEventListener('input', unblockOwnCloudAuthentication);
   elements.ocPassword.addEventListener('input', unblockOwnCloudAuthentication);

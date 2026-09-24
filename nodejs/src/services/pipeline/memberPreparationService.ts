@@ -44,6 +44,8 @@ export class MemberPreparationService {
     }
 
     const packages: PdfPackage[] = [];
+    const missingFiles = new Set<string>();
+    const requestedRecipients = members.filter((entry) => entry.name.trim()).length;
 
     for (const entry of members) {
       const name = entry.name.trim();
@@ -54,7 +56,7 @@ export class MemberPreparationService {
       // If no files specified, use all files
       const files = requested.length === 0
         ? inventory.map((item) => item.relative)
-        : this.resolveRequestedFiles(requested, inventory, logger);
+        : this.resolveRequestedFiles(requested, inventory, logger, missingFiles);
 
       if (files.length === 0) {
         logger?.(`Aucun fichier attribué pour le membre ${name}. Attribution ignorée.`);
@@ -66,10 +68,10 @@ export class MemberPreparationService {
 
     if (packages.length === 0) {
       return {
-        requestedRecipients: 0,
+        requestedRecipients,
         processedRecipients: 0,
         processedFiles: 0,
-        missingFiles: [],
+        missingFiles: Array.from(missingFiles).sort((a, b) => a.localeCompare(b)),
         errors: [],
       };
     }
@@ -92,6 +94,8 @@ export class MemberPreparationService {
       activeStages,
       restrictionOptions,
     );
+    stats.requestedRecipients = requestedRecipients;
+    stats.missingFiles = Array.from(new Set([...stats.missingFiles, ...missingFiles])).sort((a, b) => a.localeCompare(b));
 
     if (zipTargets.length > 0 && zipEnabled) {
       const zipResult = await this.zipService.zipAll(zipTargets, { logger, abortSignal, removeSource: true });
@@ -111,6 +115,7 @@ export class MemberPreparationService {
     requested: string[],
     inventory: PdfInventoryEntry[],
     logger?: PipelineLogger,
+    missingFiles?: Set<string>,
   ): string[] {
     const exactLookup = new Map(inventory.map((e) => [e.relative, e.relative]));
     const lookup = new Map(inventory.map((e) => [e.relative.toLowerCase(), e.relative]));
@@ -126,6 +131,10 @@ export class MemberPreparationService {
       if (trimmed === '.') {
         const rootFiles = inventory.filter((e) => !e.relative.includes('/'));
         resolved.push(...rootFiles.map((m) => m.relative));
+        if (rootFiles.length === 0) {
+          missingFiles?.add(trimmed);
+          logger?.(`Aucun fichier correspondant au motif: ${trimmed}`);
+        }
         continue;
       }
 
@@ -162,9 +171,11 @@ export class MemberPreparationService {
         if (matches.length > 0) {
           resolved.push(...matches.map((m) => m.relative));
         } else {
+          missingFiles?.add(trimmed);
           logger?.(`Aucun fichier correspondant au motif: ${trimmed}`);
         }
       } else {
+        missingFiles?.add(trimmed);
         logger?.(`Fichier introuvable: ${trimmed}`);
       }
     }

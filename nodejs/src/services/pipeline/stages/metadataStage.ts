@@ -19,10 +19,11 @@ export class MetadataStage implements PdfProcessingStage {
     abortSignal?: AbortSignal,
   ): Promise<PdfProcessingContext> {
     throwIfPipelineCancelled(abortSignal);
-    const jsonPath = await this.buildMetadataUpdateJson(context.workingPath, context.recipient, abortSignal);
+    const logWarning = (details: string) => logger?.(`  ⚠️ ${context.relativePath}: avertissement qpdf lors du traitement des métadonnées.\n${details}`);
+    const jsonPath = await this.buildMetadataUpdateJson(context.workingPath, context.recipient, abortSignal, logWarning);
 
     try {
-      const rebuiltPath = await this.rebuildPdf(context.workingPath, jsonPath, abortSignal);
+      const rebuiltPath = await this.rebuildPdf(context.workingPath, jsonPath, abortSignal, logWarning);
 
       if (context.useDefaultLogging) {
         logger?.(`  → ${context.relativePath}: métadonnées nettoyées et sujet appliqué`);
@@ -38,6 +39,7 @@ export class MetadataStage implements PdfProcessingStage {
     sourcePath: string,
     recipient: string,
     abortSignal?: AbortSignal,
+    logWarning?: PipelineLogger,
   ): Promise<string> {
     const command = await this.commandResolver.resolve();
     const jsonPath = path.join(os.tmpdir(), `cac_demat_meta_${randomUUID()}.json`);
@@ -45,6 +47,7 @@ export class MetadataStage implements PdfProcessingStage {
     const result = await runCommand(
       command,
       [
+        '--warning-exit-0',
         sourcePath,
         '--json-output',
         jsonPath,
@@ -59,6 +62,7 @@ export class MetadataStage implements PdfProcessingStage {
       const error = result.stderr.trim() || result.stdout.trim() || 'inconnue';
       throw new Error(`Impossible de préparer la mise à jour JSON des métadonnées. Commande: ${command}. Erreur: ${error}`);
     }
+    if (result.stderr.trim()) logWarning?.(result.stderr.trim());
 
     throwIfPipelineCancelled(abortSignal);
     const buffer = await readFile(jsonPath);
@@ -119,7 +123,12 @@ export class MetadataStage implements PdfProcessingStage {
     };
   }
 
-  private async rebuildPdf(sourcePath: string, jsonPath: string, abortSignal?: AbortSignal): Promise<string> {
+  private async rebuildPdf(
+    sourcePath: string,
+    jsonPath: string,
+    abortSignal?: AbortSignal,
+    logWarning?: PipelineLogger,
+  ): Promise<string> {
     const command = await this.commandResolver.resolve();
     const outputPath = path.join(os.tmpdir(), `cac_demat_metadata_${randomUUID()}.pdf`);
     await mkdir(path.dirname(outputPath), { recursive: true });
@@ -136,6 +145,7 @@ export class MetadataStage implements PdfProcessingStage {
       const error = result.stderr.trim() || result.stdout.trim() || 'inconnue';
       throw new Error(`Impossible de reconstruire le PDF sans métadonnées. Commande: ${command}. Erreur: ${error}`);
     }
+    if (result.stderr.trim()) logWarning?.(result.stderr.trim());
 
     return outputPath;
   }

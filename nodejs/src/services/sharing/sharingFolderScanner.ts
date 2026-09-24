@@ -9,17 +9,14 @@ export interface DiscoveredRecipient {
 }
 
 export const deriveOwnCloudUsername = (name: string): string => {
-  const parts = name
+  return name
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
-    .replace(/[’']/g, '')
-    .split(/[^a-z0-9-]+/g)
-    .filter(Boolean);
-  if (parts.length < 2) {
-    return parts[0] ?? '';
-  }
-  return [parts[parts.length - 1], ...parts.slice(0, -1)].join('.');
+    .replace(/[-’']/g, '')
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean)
+    .join('.');
 };
 
 export class SharingFolderScanner {

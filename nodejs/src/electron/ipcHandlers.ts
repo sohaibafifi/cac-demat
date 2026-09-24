@@ -318,28 +318,25 @@ export class IpcHandlerRegistry {
           const notification = {
             requested: Boolean(payload.sendNotification),
             sent: false,
-            alreadySent: false,
             error: null as string | null,
           };
           if (notification.requested) {
-            if (result.share.mailSent) {
-              notification.alreadySent = true;
-            } else {
-              try {
-                await this.ownCloudShareService.sendShareNotification(
-                  credentials,
-                  result.share,
-                  controller.signal,
-                );
-                notification.sent = true;
-              } catch (error) {
-                if (error instanceof OwnCloudAuthenticationError) {
-                  throw error;
-                }
-                notification.error = error instanceof Error
-                  ? error.message
-                  : 'La notification par e-mail a échoué.';
+            // ownCloud can set mail_send through /notification/marksent without
+            // sending mail. Honour this explicit request even for an existing share.
+            try {
+              await this.ownCloudShareService.sendShareNotification(
+                credentials,
+                result.share,
+                controller.signal,
+              );
+              notification.sent = true;
+            } catch (error) {
+              if (error instanceof OwnCloudAuthenticationError) {
+                throw error;
               }
+              notification.error = error instanceof Error
+                ? error.message
+                : 'La notification par e-mail a échoué.';
             }
           }
 

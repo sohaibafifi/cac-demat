@@ -749,14 +749,14 @@ export class DashboardCoordinator {
 
       const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
       this.appendLog(`Statistiques: ${summary}`);
-      this.applyRunIssues(stats.errors);
+      this.applyRunIssues(stats.errors, stats.missingFiles);
 
       if (stats.missingFiles.length > 0) {
         this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
       }
 
-      if (stats.errors.length > 0) {
-        this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
+      if (stats.errors.length > 0 || stats.missingFiles.length > 0) {
+        if (stats.errors.length > 0) this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
         this.status = 'Terminé avec erreurs';
         this.appendLog('Pipeline terminé avec erreurs.');
       } else {
@@ -835,14 +835,14 @@ export class DashboardCoordinator {
 
       const summary = `${stats.processedRecipients}/${stats.requestedRecipients} destinataire(s), ${stats.processedFiles} fichier(s) généré(s).`;
       this.appendLog(`Statistiques: ${summary}`);
-      this.applyRunIssues(stats.errors);
+      this.applyRunIssues(stats.errors, stats.missingFiles);
 
       if (stats.missingFiles.length > 0) {
         this.appendLog(`⚠️ ${stats.missingFiles.length} fichier(s) introuvable(s) ignoré(s).`);
       }
 
-      if (stats.errors.length > 0) {
-        this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
+      if (stats.errors.length > 0 || stats.missingFiles.length > 0) {
+        if (stats.errors.length > 0) this.appendLog(`⚠️ ${stats.errors.length} erreur(s) de génération ou d’archivage.`);
         this.status = 'Terminé avec erreurs';
         this.appendLog('Pipeline terminé avec erreurs.');
       } else {
@@ -1118,8 +1118,11 @@ export class DashboardCoordinator {
     return `${issue.recipient} • ${issue.file} • ${issue.message}`;
   }
 
-  private applyRunIssues(issues: PreparationIssue[]): void {
-    this.runErrors = issues.map((issue) => this.formatRunIssue(issue));
+  private applyRunIssues(issues: PreparationIssue[], missingFiles: string[] = []): void {
+    this.runErrors = [
+      ...issues.map((issue) => this.formatRunIssue(issue)),
+      ...missingFiles.map((file) => `Fichier ou motif introuvable • ${file} • Aucun PDF généré pour cette attribution.`),
+    ];
     this.emitChange();
   }
 
