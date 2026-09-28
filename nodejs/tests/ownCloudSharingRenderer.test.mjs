@@ -12,7 +12,9 @@ const handlerNames = [
   'setSharingOperationActive',
   'shareSingleRecipient',
   'handleSharingSingle',
+  'handleSharingResendNotification',
   'handleSharingShareAll',
+  'handleSharingCancel',
   'initSharingPanel',
   'handleSharingReset',
   'handleSharingConnect',
@@ -23,6 +25,9 @@ const handlerNames = [
   'renderSharingRecipients',
   'getSharingExpirationMinimum',
   'validateSharingExpirationDate',
+  'formatOwnCloudShareError',
+  'isOwnCloudAuthenticationError',
+  'blockOwnCloudAuthentication',
   'formatError',
 ];
 const handlerSource = handlerNames.map((name) => {
@@ -61,6 +66,7 @@ function createSharingHarness({
       '[data-role="remote-path"]': { value: `/CAC/${recipient.name}` },
       '[data-role="mode"]': { value: 'share-only' },
       '[data-role="share"]': { disabled: false },
+      '[data-role="resend-notification"]': { disabled: false },
     };
     return {
       dataset: { recipient: recipient.name },
@@ -101,11 +107,12 @@ function createSharingHarness({
       appendChild(child) { this.children.push(child); },
       querySelectorAll: (selector) => selector === '[data-recipient]'
         ? rows
-        : rows.map((row) => row.querySelector('[data-role="share"]')),
+        : rows.map((row) => row.querySelector(selector)).filter(Boolean),
     },
   };
   const calls = [];
   const apiCalls = [];
+  const notificationCalls = [];
   const summaries = [];
   const recordUnexpectedCall = (name) => () => {
     apiCalls.push(name);
@@ -113,6 +120,7 @@ function createSharingHarness({
   };
   const context = vm.createContext({
     Error,
+    OWN_CLOUD_AUTHENTICATION_ERROR: 'Authentification ownCloud refusée. Vérifiez vos identifiants.',
     elements,
     document: { createElement: () => ({}) },
     sharingFolder: '/packages',
@@ -135,6 +143,18 @@ function createSharingHarness({
         ownCloudTest: recordUnexpectedCall('ownCloudTest'),
         selectFolder: recordUnexpectedCall('selectFolder'),
         ownCloudScanFolder: recordUnexpectedCall('ownCloudScanFolder'),
+        async ownCloudResendNotification(payload) {
+          notificationCalls.push({
+            payload,
+            operationActive: context.sharingOperationActive,
+            shareAllDisabled: elements.ocShareAll.disabled,
+            resetDisabled: elements.ocReset.disabled,
+            notificationDisabled: elements.ocNotifyEmail.disabled,
+            rowButtonsDisabled: rows.every((row) => row.querySelector('[data-role="share"]').disabled),
+            resendButtonsDisabled: rows.every((row) => row.querySelector('[data-role="resend-notification"]').disabled),
+          });
+          return { share: { shareWith: payload.shareWith }, notification: { requested: true, sent: true } };
+        },
         async ownCloudShareFolder(payload) {
           calls.push({
             payload,
@@ -152,7 +172,7 @@ function createSharingHarness({
   });
   handlerScript.runInContext(context);
   context.updateSharingActionStates();
-  return { context, elements, rows, recipients, calls, apiCalls, connectionText, summaries };
+  return { context, elements, rows, recipients, calls, notificationCalls, apiCalls, connectionText, summaries };
 }
 
 const notificationCases = [
@@ -383,4 +403,186 @@ test('legacy alreadySent metadata does not claim a notification was delivered', 
   await context.handleSharingSingle(rows[0], recipients[0]);
   assert.equal(rows[0].state, 'success');
   assert.doesNotMatch(rows[0].resultText, /notification|envoyée/i);
+});
+
+test('explicit resends ignore automatic notification, upload and expiration settings', async () => {
+  const { context, elements, rows, recipients, calls, notificationCalls, apiCalls, summaries } = createSharingHarness({
+    checked: false,
+    expiration: '2000-01-01',
+    expirationValid: false,
+  });
+  rows[0].querySelector('[data-role="mode"]').value = 'upload';
+  rows[0].querySelector('[data-role="share-with"]').value = '  alice  ';
+  rows[0].querySelector('[data-role="remote-path"]').value = ' /CAC/Alice ';
+  elements.ocPermissions.value = '31';
+  elements.ocUploadDefault.checked = true;
+
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+
+  assert.equal(notificationCalls.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(notificationCalls[0].payload)), {
+    recipientName: 'Alice',
+    remotePath: '/CAC/Alice',
+    shareWith: 'alice',
+    shareType: 'user',
+  });
+  for (const property of ['operationActive', 'shareAllDisabled', 'resetDisabled', 'notificationDisabled', 'rowButtonsDisabled', 'resendButtonsDisabled']) {
+    assert.equal(notificationCalls[0][property], true, `${property} during the request`);
+  }
+  assert.equal(calls.length, 0, 'Resending must not create or update a share');
+  assert.deepEqual(apiCalls, []);
+  assert.equal(elements.ocExpireDate.validationCalls, 0, 'A stale date cannot prevent resending a notification');
+  assert.equal(elements.ocNotifyEmail.checked, false);
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(rows[0].state, 'success');
+  assert.equal(rows[0].statusText, 'Notification demandée');
+  assert.match(rows[0].resultText, /Nouvelle notification acceptée par ownCloud pour alice à \d{2}:\d{2}:\d{2}\./);
+  assert.doesNotMatch(rows[0].resultText, /e-mail envoyé|e-mail reçu|remis/i);
+  assert.equal(summaries.at(-1).state, 'success');
+  assert.ok(rows.every((row) => !row.querySelector('[data-role="resend-notification"]').disabled));
+});
+
+test('each completed explicit resend makes a new notification request', async () => {
+  const { context, rows, recipients, calls, notificationCalls } = createSharingHarness();
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  assert.equal(notificationCalls.length, 2);
+  assert.equal(notificationCalls[0].payload.shareWith, 'alice');
+  assert.equal(notificationCalls[1].payload.shareWith, 'alice');
+  assert.equal(calls.length, 0);
+  assert.equal(rows[0].state, 'success');
+});
+
+test('pending explicit notifications guard against duplicate requests and competing actions', async () => {
+  const { context, elements, rows, recipients, calls, notificationCalls, apiCalls } = createSharingHarness();
+  const originalResend = context.window.electronAPI.ownCloudResendNotification;
+  let finish;
+  const pending = new Promise((resolve) => { finish = resolve; });
+  context.window.electronAPI.ownCloudResendNotification = async (payload) => {
+    await originalResend(payload);
+    return pending;
+  };
+  const first = context.handleSharingResendNotification(rows[0], recipients[0]);
+  assert.equal(context.sharingOperationActive, true);
+  assert.equal(elements.ocCancel.disabled, false);
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  await context.handleSharingResendNotification(rows[1], recipients[1]);
+  await context.handleSharingSingle(rows[1], recipients[1]);
+  await context.handleSharingShareAll();
+  await context.handleSharingReset();
+  await context.handleSharingConnect();
+  await context.handleSharingPickFolder();
+  assert.equal(notificationCalls.length, 1);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(apiCalls, []);
+
+  finish({ notification: { requested: true, sent: true } });
+  await first;
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(elements.ocCancel.disabled, true);
+  assert.equal(elements.ocReset.disabled, false);
+  assert.ok(rows.every((row) => !row.querySelector('[data-role="resend-notification"]').disabled));
+});
+
+for (const scenario of [
+  { label: 'a disconnected panel', context: { sharingConnectionReady: false } },
+  { label: 'a busy panel', context: { sharingPanelBusy: true } },
+  { label: 'an active operation', context: { sharingOperationActive: true } },
+  { label: 'unsupported notifications', context: { sharingMailNotificationAvailable: false } },
+  { label: 'unknown notification capability', context: { sharingMailNotificationAvailable: null } },
+]) {
+  test(`explicit notifications are unavailable with ${scenario.label}`, async () => {
+    const { context, rows, recipients, calls, notificationCalls } = createSharingHarness();
+    Object.assign(context, scenario.context);
+    context.updateSharingActionStates();
+    assert.ok(rows.every((row) => row.querySelector('[data-role="resend-notification"]').disabled));
+    await context.handleSharingResendNotification(rows[0], recipients[0]);
+    assert.equal(notificationCalls.length, 0);
+    assert.equal(calls.length, 0);
+  });
+}
+
+test('explicit notifications require a recipient username', async () => {
+  const { context, rows, recipients, calls, notificationCalls, summaries } = createSharingHarness();
+  rows[0].querySelector('[data-role="share-with"]').value = '   ';
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  assert.equal(notificationCalls.length, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(rows[0].state, 'error');
+  assert.match(rows[0].resultText, /username|identifiant/i);
+  assert.equal(summaries.at(-1).state, 'error');
+});
+
+for (const notification of [{ sent: false }, {}, undefined]) {
+  test(`explicit notifications require a confirmed server response: ${JSON.stringify(notification)}`, async () => {
+    const { context, rows, recipients, summaries } = createSharingHarness();
+    context.window.electronAPI.ownCloudResendNotification = async () => ({ notification });
+    await context.handleSharingResendNotification(rows[0], recipients[0]);
+    assert.equal(context.sharingOperationActive, false);
+    assert.equal(rows[0].state, 'error');
+    assert.equal(rows[0].statusText, 'Échec de la notification');
+    assert.doesNotMatch(rows[0].resultText, /acceptée par ownCloud/);
+    assert.equal(summaries.at(-1).state, 'error');
+  });
+}
+
+test('explicit notification failures expose the server error and remain retryable', async () => {
+  const { context, elements, rows, recipients, summaries } = createSharingHarness();
+  context.window.electronAPI.ownCloudResendNotification = async () => {
+    throw new Error('SMTP service unavailable');
+  };
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(context.sharingConnectionReady, true);
+  assert.equal(rows[0].state, 'error');
+  assert.equal(rows[0].statusText, 'Échec de la notification');
+  assert.match(rows[0].resultText, /SMTP service unavailable/);
+  assert.match(summaries.at(-1).message, /SMTP service unavailable/);
+  assert.equal(rows[0].querySelector('[data-role="resend-notification"]').disabled, false);
+  assert.equal(elements.ocReset.disabled, false);
+});
+
+test('authentication failure stops explicit notifications until credentials are checked again', async () => {
+  const { context, elements, rows, recipients, summaries } = createSharingHarness();
+  let attempts = 0;
+  context.window.electronAPI.ownCloudResendNotification = async () => {
+    attempts += 1;
+    throw new Error('HTTP 401 Unauthorized');
+  };
+  await context.handleSharingResendNotification(rows[0], recipients[0]);
+  await context.handleSharingResendNotification(rows[1], recipients[1]);
+  assert.equal(attempts, 1);
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(context.sharingAuthenticationBlocked, true);
+  assert.equal(context.sharingConnectionReady, false);
+  assert.equal(context.sharingMailNotificationAvailable, null);
+  assert.equal(rows[0].state, 'error');
+  assert.match(rows[0].resultText, /Authentification ownCloud refusée/);
+  assert.equal(summaries.at(-1).state, 'error');
+  assert.ok(rows.every((row) => row.querySelector('[data-role="resend-notification"]').disabled));
+  assert.equal(elements.ocConnect.disabled, true);
+});
+
+test('cancelling an explicit notification restores controls without showing a success', async () => {
+  const { context, elements, rows, recipients, summaries } = createSharingHarness();
+  let rejectNotification;
+  const pending = new Promise((resolve, reject) => { rejectNotification = reject; });
+  context.window.electronAPI.ownCloudResendNotification = () => pending;
+  let cancellations = 0;
+  context.window.electronAPI.ownCloudCancel = async () => {
+    cancellations += 1;
+    rejectNotification(new Error('The operation was aborted'));
+  };
+  const resend = context.handleSharingResendNotification(rows[0], recipients[0]);
+  await context.handleSharingCancel();
+  await resend;
+  assert.equal(cancellations, 1);
+  assert.equal(context.sharingOperationActive, false);
+  assert.equal(rows[0].state, 'idle');
+  assert.equal(rows[0].statusText, 'Annulé');
+  assert.doesNotMatch(rows[0].resultText, /acceptée par ownCloud/);
+  assert.equal(summaries.at(-1).state, 'idle');
+  assert.equal(elements.ocCancel.disabled, true);
+  assert.equal(rows[0].querySelector('[data-role="resend-notification"]').disabled, false);
 });

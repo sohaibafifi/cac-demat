@@ -18,6 +18,12 @@ export interface CreateShareInput extends OwnCloudCredentials {
   expireDate?: string;
 }
 
+export interface ResendShareNotificationInput extends OwnCloudCredentials {
+  remotePath: string;
+  shareWith: string;
+  shareType: 'user' | 'group';
+}
+
 export interface ShareEntry {
   id: string;
   shareWith: string;
@@ -225,6 +231,29 @@ export class OwnCloudShareService {
     return { share, alreadyExisted: false };
   }
 
+  async resendShareNotification(
+    input: ResendShareNotificationInput,
+    signal?: AbortSignal,
+  ): Promise<ShareEntry> {
+    if (input.shareType !== 'user' && input.shareType !== 'group') {
+      throw new Error('La notification par e-mail est réservée aux partages utilisateur ou groupe.');
+    }
+    if (typeof input.shareWith !== 'string' || !input.shareWith.trim()) {
+      throw new Error('Login du destinataire manquant.');
+    }
+    if (typeof input.remotePath !== 'string' || !this.splitRemotePath(input.remotePath.replace(/\\/g, '/')).length) {
+      throw new Error('Chemin distant ownCloud non renseigné.');
+    }
+    this.throwIfAborted(signal);
+    const share = await this.findExistingShare(input, signal, true);
+    if (!share) {
+      throw new Error('Aucun partage existant pour ce dossier et ce destinataire. Partagez le dossier avant de renvoyer la notification.');
+    }
+    this.throwIfAborted(signal);
+    await this.sendShareNotification(input, share, signal);
+    return share;
+  }
+
   async sendShareNotification(
     credentials: OwnCloudCredentials,
     share: ShareEntry,
@@ -339,11 +368,14 @@ export class OwnCloudShareService {
   private async findExistingShare(
     input: CreateShareInput,
     signal?: AbortSignal,
+    matchPath = false,
   ): Promise<ShareEntry | null> {
     const shares = await this.listSharesForPath(input, input.remotePath, signal);
     const target = input.shareWith.trim().toLowerCase();
+    const normalizePath = (value: string) => `/${value.replace(/\\/g, '/').split('/').filter(Boolean).join('/')}`;
     return shares.find((share) =>
-      share.shareType === input.shareType && share.shareWith.trim().toLowerCase() === target,
+      share.shareType === input.shareType && share.shareWith.trim().toLowerCase() === target &&
+      (!matchPath || normalizePath(share.path) === normalizePath(input.remotePath)),
     ) ?? null;
   }
 

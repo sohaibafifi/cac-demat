@@ -1820,7 +1820,10 @@ function renderSharingRecipients(): void {
         <span>Username ownCloud</span>
         <input type="text" data-role="share-with" value="${escapeHtml(recipient.suggestedUsername)}" placeholder="prenom.nom" />
       </label>
-      <button type="button" class="secondary" data-role="share">Partager</button>
+      <div class="sharing-recipient-actions">
+        <button type="button" class="secondary" data-role="share">Partager</button>
+        <button type="button" class="secondary" data-role="resend-notification">Renvoyer la notification</button>
+      </div>
       <div class="sharing-upload-progress" data-role="upload-progress" hidden>
         <div class="sharing-upload-progress-head">
           <span data-role="upload-progress-label">Préparation du téléversement...</span>
@@ -1851,6 +1854,9 @@ function renderSharingRecipients(): void {
     const button = row.querySelector<HTMLButtonElement>('[data-role="share"]')!;
     button.addEventListener('click', () => {
       void handleSharingSingle(row, recipient);
+    });
+    row.querySelector<HTMLButtonElement>('[data-role="resend-notification"]')!.addEventListener('click', () => {
+      void handleSharingResendNotification(row, recipient);
     });
     elements.ocRecipientsList.appendChild(row);
   }
@@ -1885,6 +1891,14 @@ function updateSharingActionStates(): void {
   }
   for (const button of Array.from(elements.ocRecipientsList.querySelectorAll<HTMLButtonElement>('[data-role="share"]'))) {
     button.disabled = sharingDisabled;
+  }
+  for (const button of Array.from(elements.ocRecipientsList.querySelectorAll<HTMLButtonElement>('[data-role="resend-notification"]'))) {
+    button.disabled = sharingDisabled || sharingMailNotificationAvailable !== true;
+    button.title = sharingMailNotificationAvailable === false
+      ? 'Les notifications par e-mail sont désactivées sur le serveur ownCloud.'
+      : !sharingConnectionReady || sharingMailNotificationAvailable === null
+        ? 'Testez la connexion pour vérifier la disponibilité des notifications.'
+        : 'Demander un nouvel e-mail pour le partage existant de ce destinataire.';
   }
 }
 
@@ -2026,6 +2040,54 @@ async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient
     } else {
       setSharingSummary('idle', `Partage annulé pour ${recipient.name}.`);
     }
+  } finally {
+    setSharingOperationActive(false);
+  }
+}
+
+async function handleSharingResendNotification(row: HTMLElement, recipient: SharingRecipient): Promise<void> {
+  if (sharingOperationActive || sharingPanelBusy || !sharingConnectionReady || sharingMailNotificationAvailable !== true) return;
+  const api = window.electronAPI;
+  if (!api?.ownCloudResendNotification) return;
+  const shareWith = row.querySelector<HTMLInputElement>('[data-role="share-with"]')!.value.trim();
+  const remotePath = row.querySelector<HTMLInputElement>('[data-role="remote-path"]')!.value.trim();
+  if (!shareWith) {
+    setSharingRecipientState(row, 'error', 'Username manquant', 'Renseignez le username ownCloud du destinataire avant le renvoi.');
+    setSharingSummary('error', `Notification impossible pour ${recipient.name} : username manquant.`);
+    return;
+  }
+
+  sharingBatchCancelled = false;
+  setSharingOperationActive(true);
+  prepareSharingUploadProgress(row, false);
+  setSharingRecipientState(row, 'working', 'Notification en cours...');
+  setSharingSummary('idle', `Demande de notification pour ${recipient.name}...`);
+  try {
+    const response = await api.ownCloudResendNotification({
+      recipientName: recipient.name,
+      remotePath,
+      shareWith,
+      shareType: 'user',
+    });
+    if (response.notification?.sent !== true) {
+      throw new Error(response.notification?.error || 'ownCloud n’a pas confirmé la demande de notification.');
+    }
+    const time = new Date().toLocaleTimeString('fr-FR');
+    const message = `Nouvelle notification acceptée par ownCloud pour ${shareWith} à ${time}.`;
+    setSharingRecipientState(row, 'success', 'Notification demandée', message);
+    setSharingSummary('success', message);
+  } catch (error) {
+    const cancelled = sharingBatchCancelled || /abort|annul/i.test(formatError(error));
+    const authenticationRejected = !cancelled && isOwnCloudAuthenticationError(error);
+    if (authenticationRejected) blockOwnCloudAuthentication();
+    const message = cancelled ? 'Demande de notification annulée.' : formatOwnCloudShareError(error, shareWith);
+    setSharingRecipientState(
+      row,
+      cancelled ? 'idle' : 'error',
+      cancelled ? 'Annulé' : authenticationRejected ? 'Authentification refusée' : 'Échec de la notification',
+      message,
+    );
+    setSharingSummary(cancelled ? 'idle' : 'error', message);
   } finally {
     setSharingOperationActive(false);
   }

@@ -285,6 +285,9 @@ export class IpcHandlerRegistry {
           appPassword: config.appPassword,
         };
         const remotePath = this.normalizeRemotePath(payload.remotePath);
+        if (this.activeOwnCloudController) {
+          throw new Error('Une opération ownCloud est déjà en cours.');
+        }
         const controller = new AbortController();
         this.activeOwnCloudController = controller;
 
@@ -349,6 +352,53 @@ export class IpcHandlerRegistry {
             share: result.share,
             alreadyExisted: result.alreadyExisted,
             notification,
+          };
+        } finally {
+          if (this.activeOwnCloudController === controller) {
+            this.activeOwnCloudController = null;
+          }
+        }
+      },
+    );
+
+    this.ipcMain.handle(
+      'owncloud:resend-notification',
+      async (
+        _event: IpcMainInvokeEvent,
+        payload: { recipientName: string; remotePath: string; shareWith: string; shareType: 'user' | 'group' },
+      ) => {
+        if (this.activeOwnCloudController) {
+          throw new Error('Une opération ownCloud est déjà en cours.');
+        }
+        const controller = new AbortController();
+        this.activeOwnCloudController = controller;
+        try {
+          const shareWith = typeof payload?.shareWith === 'string' ? payload.shareWith.trim() : '';
+          if (!shareWith) {
+            throw new Error('Login du destinataire manquant.');
+          }
+          if (payload.shareType !== 'user' && payload.shareType !== 'group') {
+            throw new Error('La notification par e-mail est réservée aux partages utilisateur ou groupe.');
+          }
+          if (typeof payload.remotePath !== 'string') {
+            throw new Error('Chemin distant ownCloud non renseigné.');
+          }
+          const remotePath = this.normalizeRemotePath(payload.remotePath);
+          const config = await this.ownCloudConfigStore.load();
+          this.assertCredentials(config);
+          const share = await this.ownCloudShareService.resendShareNotification({
+            baseUrl: config.baseUrl,
+            login: config.login,
+            appPassword: config.appPassword,
+            remotePath,
+            shareWith,
+            shareType: payload.shareType,
+          }, controller.signal);
+          return {
+            recipientName: payload.recipientName,
+            remotePath,
+            share,
+            notification: { requested: true, sent: true, error: null },
           };
         } finally {
           if (this.activeOwnCloudController === controller) {

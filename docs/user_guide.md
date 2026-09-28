@@ -132,6 +132,7 @@ L'application détecte les sous-dossiers et propose un username ownCloud en cons
 Vous pouvez :
 
 *   partager un seul dossier avec le bouton **"Partager"** de sa ligne ;
+*   demander un nouvel e-mail avec **"Renvoyer la notification"**, pour un dossier déjà partagé avec ce destinataire ;
 *   traiter tous les rapporteurs avec **"Partager tout"** ;
 *   interrompre l'opération en cours avec **"Annuler"** ;
 *   ouvrir **"Options"** pour modifier le mode ou le chemin ownCloud d'un rapporteur.
@@ -143,6 +144,8 @@ Les résultats sont affichés directement dans chaque ligne :
 *   **Rouge** : partage impossible, par exemple lorsque le username ownCloud est introuvable.
 
 Lorsque la case **"Envoyer une notification par e-mail"** est cochée, chaque action de partage demande une notification, y compris pour un partage existant dont ownCloud signale un envoi précédent. Le message de confirmation signifie que la demande a été acceptée par le serveur ; il ne prouve pas la réception de l'e-mail par le destinataire. Un échec de notification ne supprime pas le partage.
+
+Pour un rapporteur ou un membre qui ne retrouve plus son e-mail, utilisez **"Renvoyer la notification"** sur sa ligne. Ce bouton fonctionne indépendamment de la case de notification, du mode de téléversement et de la date saisie. Il recherche le partage existant pour le username et le chemin ownCloud affichés, puis demande un nouvel e-mail sans renvoyer les fichiers ni modifier les permissions ou l’expiration. Il reste disponible après un premier envoi. Si aucun partage correspondant n’existe, une erreur vous invite à partager le dossier d’abord. Le résultat affiche l’heure d’acceptation par ownCloud ou l’erreur rencontrée. La connexion doit être validée et les notifications autorisées sur le serveur.
 
 ### 4. Réinitialiser l'onglet
 

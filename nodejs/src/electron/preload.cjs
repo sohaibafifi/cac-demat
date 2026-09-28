@@ -31,6 +31,7 @@ const api = {
   ownCloudTest: () => ipcRenderer.invoke('owncloud:test'),
   ownCloudScanFolder: (folder) => ipcRenderer.invoke('owncloud:scan-folder', folder),
   ownCloudShareFolder: (payload) => ipcRenderer.invoke('owncloud:share-folder', payload),
+  ownCloudResendNotification: (payload) => ipcRenderer.invoke('owncloud:resend-notification', payload),
   ownCloudCancel: () => ipcRenderer.invoke('owncloud:cancel'),
   openPath: (filePath) => ipcRenderer.invoke('coordinator:open-path', filePath),
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode'),

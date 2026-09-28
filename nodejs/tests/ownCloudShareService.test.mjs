@@ -306,6 +306,85 @@ test('sendShareNotification rejects a failed mail status', async () => {
   }), /notification par e-mail/);
 });
 
+const resendInput = {
+  ...credentials, remotePath: '/CAC/Recipient', shareWith: 'recipient.user', shareType: 'user',
+};
+
+for (const shareType of ['user', 'group']) {
+  test(`resending a ${shareType} notification ignores mail_send and preserves the share on repeated requests`, async () => {
+    const calls = [];
+    const share = { ...expiringShare, share_type: shareType === 'user' ? 0 : 1, mail_send: 1 };
+    const service = new OwnCloudShareService(async (url, init) => {
+      calls.push({ url: new URL(url), init });
+      return ocsResponse(init.method === 'GET' ? [share] : { status: 'success' });
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await service.resendShareNotification({ ...resendInput, shareType });
+      assert.equal(result.id, '42');
+      assert.equal(result.permissions, 15);
+      assert.equal(result.expiration, expiringShare.expiration);
+    }
+    assert.deepEqual(calls.map(({ init }) => init.method), ['GET', 'POST', 'GET', 'POST']);
+    for (const call of calls.filter(({ init }) => init.method === 'POST')) {
+      assert.equal(call.url.pathname, '/ocs/v2.php/apps/files_sharing/api/v1/notification/send');
+      assert.deepEqual(Object.fromEntries(new URLSearchParams(call.init.body)), {
+        itemSource: '1234', itemType: 'folder', shareType: shareType === 'user' ? '0' : '1', recipient: 'recipient.user',
+      });
+    }
+  });
+}
+
+for (const [name, shares] of [
+  ['missing share', []],
+  ['other recipient', [{ ...expiringShare, share_with: 'other.user' }]],
+  ['other share type', [{ ...expiringShare, share_type: 1 }]],
+  ['other folder', [{ ...expiringShare, path: '/CAC/AnotherRecipient' }]],
+]) {
+  test(`resend refuses a ${name} without any mutation`, async () => {
+    const calls = [];
+    const service = new OwnCloudShareService(async (_url, init) => {
+      calls.push(init.method);
+      return ocsResponse(shares);
+    });
+    await assert.rejects(() => service.resendShareNotification(resendInput), /Aucun partage existant/);
+    assert.deepEqual(calls, ['GET']);
+  });
+}
+
+test('resend selects the exact existing share even when other recipients or paths are returned', async () => {
+  const calls = [];
+  const service = new OwnCloudShareService(async (_url, init) => {
+    calls.push(init);
+    return ocsResponse(init.method === 'GET' ? [
+      { ...expiringShare, id: '40', share_with: 'other.user', item_source: 111 },
+      { ...expiringShare, id: '41', path: '/CAC/AnotherRecipient', item_source: 222 },
+      expiringShare,
+    ] : { status: 'success' });
+  });
+  const result = await service.resendShareNotification(resendInput);
+  assert.equal(result.id, '42');
+  assert.equal(new URLSearchParams(calls[1].body).get('itemSource'), '1234');
+});
+
+test('resend rejects unsupported types before querying ownCloud', async () => {
+  let calls = 0;
+  const service = new OwnCloudShareService(async () => { calls += 1; throw new Error('Unexpected request'); });
+  await assert.rejects(() => service.resendShareNotification({ ...resendInput, shareType: 'email' }), /réservée aux partages/);
+  assert.equal(calls, 0);
+});
+
+test('resend cancellation after lookup stops before the notification request', async () => {
+  const controller = new AbortController();
+  const calls = [];
+  const service = new OwnCloudShareService(async (_url, init) => {
+    calls.push(init.method);
+    controller.abort();
+    return ocsResponse([expiringShare]);
+  });
+  await assert.rejects(() => service.resendShareNotification(resendInput, controller.signal), /annul/);
+  assert.deepEqual(calls, ['GET']);
+});
+
 test('uploadDirectory creates remote folders and streams every file', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'cac-owncloud-upload-'));
   try {

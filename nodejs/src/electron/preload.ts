@@ -44,6 +44,8 @@ const api = {
   ownCloudTest: () => ipcRenderer.invoke('owncloud:test') as Promise<any>,
   ownCloudScanFolder: (folder: string) => ipcRenderer.invoke('owncloud:scan-folder', folder) as Promise<any>,
   ownCloudShareFolder: (payload: any) => ipcRenderer.invoke('owncloud:share-folder', payload) as Promise<any>,
+  ownCloudResendNotification: (payload: { recipientName: string; remotePath: string; shareWith: string; shareType: 'user' | 'group' }) =>
+    ipcRenderer.invoke('owncloud:resend-notification', payload) as Promise<any>,
   ownCloudCancel: () => ipcRenderer.invoke('owncloud:cancel') as Promise<boolean>,
   openPath: (filePath: string) => ipcRenderer.invoke('coordinator:open-path', filePath) as Promise<boolean>,
   getAdvancedMode: () => ipcRenderer.invoke('view:get-advanced-mode') as Promise<boolean>,
