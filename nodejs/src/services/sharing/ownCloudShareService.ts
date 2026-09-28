@@ -28,6 +28,7 @@ export interface ShareEntry {
   itemSource: string | null;
   itemType: string | null;
   mailSent: boolean;
+  expiration: string | null;
 }
 
 export interface CreateShareResult {
@@ -73,6 +74,24 @@ export class OwnCloudAuthenticationError extends Error {
     super(AUTHENTICATION_ERROR_MESSAGE);
     this.name = 'OwnCloudAuthenticationError';
   }
+}
+
+export function validateOwnCloudExpireDate(value: unknown, now = new Date()): string | undefined {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error('Date d’expiration ownCloud invalide. Utilisez le format AAAA-MM-JJ.');
+  }
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new Error('Date d’expiration ownCloud invalide. Choisissez une date du calendrier.');
+  }
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+  if (value < today) {
+    throw new Error('La date d’expiration ownCloud doit être aujourd’hui ou une date future.');
+  }
+  return value;
 }
 
 export class OwnCloudShareService {
@@ -159,8 +178,24 @@ export class OwnCloudShareService {
     input: CreateShareInput,
     signal?: AbortSignal,
   ): Promise<CreateShareResult> {
+    const expireDate = validateOwnCloudExpireDate(input.expireDate);
     const existing = await this.findExistingShare(input, signal);
     if (existing) {
+      if (expireDate && existing.expiration?.slice(0, 10) !== expireDate) {
+        const payload = await this.fetchOcs(
+          input,
+          `/ocs/v2.php/apps/files_sharing/api/v1/shares/${encodeURIComponent(existing.id)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ expireDate }).toString(),
+            signal,
+          },
+        );
+        const share = this.parseShare(payload.data);
+        this.assertExpirationApplied(share, expireDate);
+        return { share, alreadyExisted: true };
+      }
       return { share: existing, alreadyExisted: true };
     }
 
@@ -169,8 +204,8 @@ export class OwnCloudShareService {
     body.set('shareType', String(SHARE_TYPE_CODES[input.shareType]));
     body.set('shareWith', input.shareWith);
     body.set('permissions', String(input.permissions ?? DEFAULT_PERMISSIONS));
-    if (input.expireDate) {
-      body.set('expireDate', input.expireDate);
+    if (expireDate) {
+      body.set('expireDate', expireDate);
     }
 
     const payload = await this.fetchOcs(
@@ -183,7 +218,11 @@ export class OwnCloudShareService {
         signal,
       },
     );
-    return { share: this.parseShare(payload.data), alreadyExisted: false };
+    const share = this.parseShare(payload.data);
+    if (expireDate) {
+      this.assertExpirationApplied(share, expireDate);
+    }
+    return { share, alreadyExisted: false };
   }
 
   async sendShareNotification(
@@ -306,6 +345,12 @@ export class OwnCloudShareService {
     return shares.find((share) =>
       share.shareType === input.shareType && share.shareWith.trim().toLowerCase() === target,
     ) ?? null;
+  }
+
+  private assertExpirationApplied(share: ShareEntry, expireDate: string): void {
+    if (share.expiration?.slice(0, 10) !== expireDate) {
+      throw new Error(`ownCloud n’a pas confirmé la date d’expiration demandée (${expireDate}). Le partage peut déjà exister : vérifiez son expiration sur ownCloud avant de réessayer.`);
+    }
   }
 
   private async fetchOcs(
@@ -492,6 +537,7 @@ export class OwnCloudShareService {
       itemSource: this.resolveOptionalString(record.item_source ?? record.file_source),
       itemType: this.resolveOptionalString(record.item_type),
       mailSent: Number(record.mail_send ?? 0) === 1 || record.mail_send === true,
+      expiration: this.resolveOptionalString(record.expiration),
     };
   }
 

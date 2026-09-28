@@ -145,6 +145,7 @@
       input[type="url"],
       input[type="password"],
       input[type="email"],
+      input[type="date"],
       select,
       textarea {
         width: 100%;
@@ -194,6 +195,7 @@
       input[type="url"]:focus,
       input[type="password"]:focus,
       input[type="email"]:focus,
+      input[type="date"]:focus,
       select:focus,
       textarea:focus {
         outline: none;
@@ -527,6 +529,7 @@
 
       .sharing-connection-fields label,
       .sharing-destination-grid label,
+      .sharing-expiration label,
       .sharing-recipient-target,
       .sharing-options label {
         display: grid;
@@ -537,6 +540,7 @@
 
       .sharing-connection-fields input,
       .sharing-destination-grid input,
+      .sharing-expiration input,
       .sharing-recipient-row input,
       .sharing-recipient-row select,
       .sharing-options input,
@@ -572,6 +576,20 @@
       .sharing-switches {
         display: grid;
         gap: 0.45rem;
+      }
+
+      .sharing-expiration {
+        display: grid;
+        grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+        align-items: center;
+        gap: 0.65rem;
+      }
+
+      .sharing-expiration p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.5;
       }
 
       .sharing-switch {
@@ -1115,6 +1133,7 @@
 
         .sharing-connection-fields,
         .sharing-destination-grid,
+        .sharing-expiration,
         .sharing-options-grid,
         .sharing-recipient-row,
         .sharing-recipient-options-grid {
@@ -1477,6 +1496,12 @@ Marie Martin;.;*.pdf</pre>
                   <span>Envoyer une notification par e-mail</span>
                 </label>
               </div>
+            </div>
+            <div class="sharing-expiration">
+              <label>Date d’expiration (facultative)
+                <input type="date" id="oc-expire-date" aria-describedby="oc-expire-date-help" />
+              </label>
+              <p id="oc-expire-date-help">Appliquée à tous les destinataires lors du partage. Vide : conserve la date existante ou utilise le réglage du serveur pour un nouveau partage.</p>
             </div>
             <details class="sharing-options">
               <summary>Permissions</summary>

@@ -6,6 +6,7 @@ import ts from 'typescript';
 import {
   OwnCloudAuthenticationError,
   OwnCloudShareService,
+  validateOwnCloudExpireDate,
 } from '../dist/services/sharing/ownCloudShareService.js';
 
 // Exercise the real IPC handlers and network service without starting Electron.
@@ -27,7 +28,7 @@ const response = (data, message = null) => new Response(JSON.stringify({
   ocs: { meta: { status: 'ok', statuscode: 200, message }, data },
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-function createHarness({ mailSent = 1, notificationResponse = () => response({ status: 'success' }) } = {}) {
+function createHarness({ mailSent = 1, notificationResponse = () => response({ status: 'success' }), expirationResponse } = {}) {
   const calls = [];
   const share = {
     id: '42', share_type: 0, share_with: 'recipient.user', permissions: 1,
@@ -42,10 +43,13 @@ function createHarness({ mailSent = 1, notificationResponse = () => response({ s
     if (init.method === 'POST' && url.pathname.endsWith('/notification/send')) {
       return notificationResponse();
     }
+    if (init.method === 'PUT' && url.pathname.endsWith('/shares/42')) {
+      return expirationResponse ? expirationResponse() : response({ ...share, expiration: `${new URLSearchParams(init.body).get('expireDate')} 00:00:00` });
+    }
     throw new Error(`Unexpected request: ${init.method} ${url.pathname}`);
   });
   const handlers = new Map();
-  const SharingHandlers = script.runInNewContext({ AbortController, OwnCloudAuthenticationError, Error });
+  const SharingHandlers = script.runInNewContext({ AbortController, OwnCloudAuthenticationError, validateOwnCloudExpireDate, Error });
   const instance = new SharingHandlers();
   Object.assign(instance, {
     ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
@@ -60,9 +64,10 @@ function createHarness({ mailSent = 1, notificationResponse = () => response({ s
   return {
     calls,
     instance,
-    share: (sendNotification) => handlers.get('owncloud:share-folder')({}, {
+    share: (sendNotification, overrides = {}) => handlers.get('owncloud:share-folder')({}, {
       recipientName: 'Recipient', remotePath: '/CAC/Recipient', localPath: '/unused',
       shareWith: 'recipient.user', shareType: 'user', mode: 'share-only', sendNotification,
+      ...overrides,
     }),
   };
 }
@@ -125,5 +130,31 @@ test('a rejected mail authentication propagates so the batch stops', async () =>
 
   await assert.rejects(() => harness.share(true), OwnCloudAuthenticationError);
   assert.equal(harness.calls.length, 2);
+  assert.equal(harness.instance.activeOwnCloudController, null);
+});
+
+test('IPC validates the expiration before uploading or contacting ownCloud', async () => {
+  const harness = createHarness();
+  let uploads = 0;
+  harness.instance.ownCloudShareService.uploadDirectory = async () => { uploads += 1; };
+  await assert.rejects(() => harness.share(true, { mode: 'upload-and-share', expireDate: '9999-02-30' }), /expiration ownCloud/);
+  assert.equal(uploads, 0);
+  assert.equal(harness.calls.length, 0);
+  assert.equal(harness.instance.activeOwnCloudController, null);
+});
+
+test('IPC sets expiration on an existing share before requesting its notification', async () => {
+  const harness = createHarness();
+  const result = await harness.share(true, { expireDate: '9999-05-31' });
+  assert.equal(result.share.expiration, '9999-05-31 00:00:00');
+  assert.equal(result.notification.sent, true);
+  assert.deepEqual(harness.calls.map(({ init }) => init.method), ['GET', 'PUT', 'POST']);
+  assert.equal(harness.instance.activeOwnCloudController, null);
+});
+
+test('IPC does not send notification when the requested expiration is not confirmed', async () => {
+  const harness = createHarness({ expirationResponse: () => response({ id: '42', expiration: null }) });
+  await assert.rejects(() => harness.share(true, { expireDate: '9999-05-31' }), /n’a pas confirmé la date d’expiration/);
+  assert.deepEqual(harness.calls.map(({ init }) => init.method), ['GET', 'PUT']);
   assert.equal(harness.instance.activeOwnCloudController, null);
 });

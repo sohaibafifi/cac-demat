@@ -6,6 +6,7 @@ import { ReviewerDepositReportService } from '../services/reporting/reviewerDepo
 import {
   OwnCloudAuthenticationError,
   OwnCloudShareService,
+  validateOwnCloudExpireDate,
   type OwnCloudShareType,
 } from '../services/sharing/ownCloudShareService.js';
 import { OwnCloudConfigStore, type OwnCloudConfig } from '../services/sharing/ownCloudConfigStore.js';
@@ -277,6 +278,7 @@ export class IpcHandlerRegistry {
         if (!Number.isInteger(permissions) || permissions < 1 || permissions > 31) {
           throw new Error('Permissions ownCloud invalides.');
         }
+        const expireDate = validateOwnCloudExpireDate(payload.expireDate);
         const credentials = {
           baseUrl: config.baseUrl,
           login: config.login,
@@ -310,7 +312,7 @@ export class IpcHandlerRegistry {
               shareWith,
               shareType: payload.shareType,
               permissions,
-              expireDate: payload.expireDate,
+              expireDate,
             },
             controller.signal,
           );

@@ -21,6 +21,8 @@ const handlerNames = [
   'setOwnCloudConnectionStatus',
   'renderOwnCloudPasswordState',
   'renderSharingRecipients',
+  'getSharingExpirationMinimum',
+  'validateSharingExpirationDate',
   'formatError',
 ];
 const handlerSource = handlerNames.map((name) => {
@@ -43,7 +45,15 @@ const savedConfig = {
   passwordStorage: 'encrypted',
 };
 
-function createSharingHarness({ checked = true, available = true, notification } = {}) {
+function createSharingHarness({
+  checked = true,
+  available = true,
+  notification,
+  expiration = '',
+  expirationValid = true,
+  shareExpiration = null,
+  alreadyExisted = false,
+} = {}) {
   const recipients = ['Alice', 'Bob'].map((name) => ({ name, absolutePath: `/packages/${name}` }));
   const rows = recipients.map((recipient) => {
     const controls = {
@@ -79,6 +89,12 @@ function createSharingHarness({ checked = true, available = true, notification }
       removeAttribute(name) { delete this[name]; },
     },
     ocPermissions: { value: '1' },
+    ocExpireDate: {
+      value: expiration,
+      min: '',
+      validationCalls: 0,
+      reportValidity() { this.validationCalls += 1; return expirationValid; },
+    },
     ocRecipientsList: {
       children: [],
       set innerHTML(value) { rows.length = 0; this.children = []; },
@@ -90,6 +106,7 @@ function createSharingHarness({ checked = true, available = true, notification }
   };
   const calls = [];
   const apiCalls = [];
+  const summaries = [];
   const recordUnexpectedCall = (name) => () => {
     apiCalls.push(name);
     throw new Error(`Unexpected API call: ${name}`);
@@ -110,7 +127,7 @@ function createSharingHarness({ checked = true, available = true, notification }
     prepareSharingUploadProgress() {},
     updateSharingUploadProgress() {},
     setSharingRecipientState(row, state, statusText, resultText) { Object.assign(row, { state, statusText, resultText }); },
-    setSharingSummary() {},
+    setSharingSummary(state, message) { summaries.push({ state, message }); },
     window: {
       electronAPI: {
         async ownCloudGetConfig() { apiCalls.push('ownCloudGetConfig'); return { ...savedConfig }; },
@@ -123,18 +140,19 @@ function createSharingHarness({ checked = true, available = true, notification }
             payload,
             operationActive: context.sharingOperationActive,
             notificationDisabled: elements.ocNotifyEmail.disabled,
+            expirationDisabled: elements.ocExpireDate.disabled,
             shareAllDisabled: elements.ocShareAll.disabled,
             resetDisabled: elements.ocReset.disabled,
             rowButtonsDisabled: rows.every((row) => row.querySelector('[data-role="share"]').disabled),
           });
-          return { share: { shareWith: payload.shareWith }, notification };
+          return { share: { shareWith: payload.shareWith, expiration: shareExpiration }, alreadyExisted, notification };
         },
       },
     },
   });
   handlerScript.runInContext(context);
   context.updateSharingActionStates();
-  return { context, elements, rows, recipients, calls, apiCalls, connectionText };
+  return { context, elements, rows, recipients, calls, apiCalls, connectionText, summaries };
 }
 
 const notificationCases = [
@@ -160,10 +178,12 @@ for (const operation of ['single', 'batch']) {
         assert.equal(call.payload.recipientName, expectedRecipients[index].name);
         assert.equal(call.operationActive, true);
         assert.equal(call.notificationDisabled, true, 'Checkbox is temporarily disabled during the request');
+        assert.equal(call.expirationDisabled, true, 'Expiration cannot change during the request');
         assert.equal(call.shareAllDisabled, true);
         assert.equal(call.resetDisabled, true);
         assert.equal(call.rowButtonsDisabled, true);
         assert.equal(call.payload.sendNotification, notification.expected);
+        assert.equal(call.payload.expireDate, undefined, 'An empty date makes no expiration request');
         assert.equal(rows[index].state, 'success');
       }
 
@@ -176,10 +196,75 @@ for (const operation of ['single', 'batch']) {
       assert.equal(elements.ocPickFolder.disabled, false);
       assert.equal(elements.ocConnect.disabled, false);
       assert.equal(elements.ocReset.disabled, false);
+      assert.equal(elements.ocExpireDate.disabled, false);
       assert.ok(rows.every((row) => !row.querySelector('[data-role="share"]').disabled));
     });
   }
+
+  test(`${operation} sharing forwards the chosen expiration date to each recipient`, async () => {
+    const { context, elements, rows, recipients, calls } = createSharingHarness({
+      expiration: '2099-10-11',
+      shareExpiration: '2099-10-11 00:00:00',
+    });
+    if (operation === 'single') {
+      await context.handleSharingSingle(rows[0], recipients[0]);
+    } else {
+      await context.handleSharingShareAll();
+    }
+
+    assert.equal(calls.length, operation === 'single' ? 1 : 2);
+    assert.equal(elements.ocExpireDate.validationCalls, 1, 'Validate once before starting the operation');
+    assert.match(elements.ocExpireDate.min, /^\d{4}-\d{2}-\d{2}$/);
+    for (const [index, call] of calls.entries()) {
+      assert.equal(call.payload.expireDate, '2099-10-11');
+      assert.equal(call.expirationDisabled, true);
+      assert.match(rows[index].resultText, /Expiration : 11\/10\/2099\./);
+    }
+    assert.equal(elements.ocExpireDate.value, '2099-10-11');
+    assert.equal(elements.ocExpireDate.disabled, false);
+  });
+
+  test(`${operation} sharing rejects an invalid date before starting any request`, async () => {
+    const { context, elements, rows, recipients, calls, apiCalls, summaries } = createSharingHarness({
+      expiration: '2000-01-01',
+      expirationValid: false,
+    });
+    if (operation === 'single') {
+      await context.handleSharingSingle(rows[0], recipients[0]);
+    } else {
+      await context.handleSharingShareAll();
+    }
+
+    assert.equal(elements.ocExpireDate.validationCalls, 1);
+    assert.equal(context.sharingOperationActive, false);
+    assert.equal(elements.ocExpireDate.disabled, false);
+    assert.equal(elements.ocShareAll.disabled, false);
+    assert.equal(calls.length, 0);
+    assert.deepEqual(apiCalls, []);
+    assert.ok(rows.every((row) => row.state === undefined));
+    assert.deepEqual(summaries, [{
+      state: 'error',
+      message: 'Choisissez une date d’expiration valide, aujourd’hui ou plus tard.',
+    }]);
+  });
 }
+
+test('reused shares display their confirmed expiration even without a new date', async () => {
+  const { context, rows, recipients, calls } = createSharingHarness({
+    alreadyExisted: true,
+    shareExpiration: '2099-10-11 00:00:00',
+  });
+  await context.handleSharingSingle(rows[0], recipients[0]);
+  assert.equal(calls[0].payload.expireDate, undefined);
+  assert.equal(rows[0].state, 'success');
+  assert.match(rows[0].resultText, /Expiration : 11\/10\/2099\./);
+});
+
+test('a requested date is not shown as confirmed when absent from the server response', async () => {
+  const { context, rows, recipients } = createSharingHarness({ expiration: '2099-10-11' });
+  await context.handleSharingSingle(rows[0], recipients[0]);
+  assert.doesNotMatch(rows[0].resultText, /Expiration|11\/10\/2099/);
+});
 
 test('reset clears transient state and reloads saved configuration without writing or connecting', async () => {
   const { context, elements, rows, recipients, calls, apiCalls } = createSharingHarness();
@@ -188,6 +273,7 @@ test('reset clears transient state and reloads saved configuration without writi
   context.sharingBatchCancelled = true;
   elements.ocPermissions.value = '31';
   elements.ocNotifyEmail.checked = false;
+  elements.ocExpireDate.value = '2099-10-11';
   let resolveConfig;
   const pendingConfig = new Promise((resolve) => { resolveConfig = resolve; });
   context.window.electronAPI.ownCloudGetConfig = () => {
@@ -207,11 +293,12 @@ test('reset clears transient state and reloads saved configuration without writi
   assert.equal(context.sharingPanelLoaded, false);
   assert.equal(context.sharingPanelBusy, true);
   assert.equal(elements.ocPassword.value, '');
+  assert.equal(elements.ocExpireDate.value, '');
   assert.equal(elements.ocFolderPath.dataset.empty, 'true');
   assert.equal(elements.ocRecipientCount.textContent, '0 destinataire');
   assert.equal(rows.length, 0);
   assert.match(elements.ocRecipientsList.children[0].textContent, /Choisissez un dossier/);
-  for (const name of ['ocReset', 'ocConnect', 'ocPickFolder', 'ocShareAll', 'ocNotifyEmail']) {
+  for (const name of ['ocReset', 'ocConnect', 'ocPickFolder', 'ocShareAll', 'ocNotifyEmail', 'ocExpireDate']) {
     assert.equal(elements[name].disabled, true, `${name} disabled during configuration load`);
   }
   await context.handleSharingReset();
@@ -231,6 +318,9 @@ test('reset clears transient state and reloads saved configuration without writi
   assert.equal(elements.ocUploadDefault.checked, savedConfig.uploadByDefault);
   assert.equal(elements.ocNotifyEmail.checked, savedConfig.notifyByEmail);
   assert.equal(elements.ocPassword.value, '');
+  assert.equal(elements.ocExpireDate.value, '');
+  assert.match(elements.ocExpireDate.min, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(elements.ocExpireDate.disabled, false);
   assert.equal(elements.ocPassword.placeholder, 'Mot de passe déjà renseigné');
   assert.equal(context.sharingPanelLoaded, true);
   assert.equal(context.sharingPanelBusy, false);

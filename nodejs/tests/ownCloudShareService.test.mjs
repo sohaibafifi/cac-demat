@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   OwnCloudAuthenticationError,
   OwnCloudShareService,
+  validateOwnCloudExpireDate,
 } from '../dist/services/sharing/ownCloudShareService.js';
 
 const credentials = {
@@ -162,9 +163,103 @@ test('createShare checks existing shares before creating a user share', async ()
   assert.equal(result.share.id, '42');
   assert.equal(result.share.itemSource, '1234');
   assert.equal(result.share.itemType, 'folder');
+  assert.equal(result.share.expiration, null);
   assert.equal(calls.length, 2);
   assert.match(calls[1].init.body, /shareType=0/);
   assert.match(calls[1].init.body, /permissions=15/);
+  assert.equal(new URLSearchParams(calls[1].init.body).has('expireDate'), false);
+});
+
+test('expiration validation accepts calendar dates from today and rejects invalid or past dates', () => {
+  const now = new Date(2028, 1, 29, 12);
+  assert.equal(validateOwnCloudExpireDate(undefined, now), undefined);
+  assert.equal(validateOwnCloudExpireDate('', now), undefined);
+  assert.equal(validateOwnCloudExpireDate('2028-02-29', now), '2028-02-29');
+  assert.equal(validateOwnCloudExpireDate('2029-01-01', now), '2029-01-01');
+  for (const invalid of ['2028-02-28', '2029-02-29', '2028-02-30', '2028-13-01', '2028-2-29', '29/02/2028', '2028-02-29T12:00:00Z', null, 20280229]) {
+    assert.throws(() => validateOwnCloudExpireDate(invalid, now), /expiration ownCloud/);
+  }
+});
+
+const expiringShare = {
+  id: '42', share_type: 0, share_with: 'recipient.user', permissions: 15,
+  path: '/CAC/Recipient', item_source: 1234, item_type: 'folder', mail_send: 0,
+  expiration: '9999-05-31 00:00:00',
+};
+const expiringShareInput = {
+  ...credentials, remotePath: '/CAC/Recipient', shareWith: 'recipient.user', shareType: 'user',
+  expireDate: '9999-05-31',
+};
+
+test('creating a share sends the requested expiration and returns the confirmed server value', async () => {
+  const calls = [];
+  const service = new OwnCloudShareService(async (url, init) => {
+    calls.push({ url: String(url), init });
+    return ocsResponse(init.method === 'GET' ? [] : expiringShare);
+  });
+  const result = await service.createShare(expiringShareInput);
+  assert.equal(result.alreadyExisted, false);
+  assert.equal(result.share.expiration, expiringShare.expiration);
+  assert.deepEqual(calls.map(({ init }) => init.method), ['GET', 'POST']);
+  assert.equal(new URLSearchParams(calls[1].init.body).get('expireDate'), '9999-05-31');
+});
+
+test('an existing share receives only an expiration update and retains its permissions', async () => {
+  const calls = [];
+  const service = new OwnCloudShareService(async (url, init) => {
+    calls.push({ url: String(url), init });
+    return ocsResponse(init.method === 'GET' ? [{ ...expiringShare, expiration: null }] : expiringShare);
+  });
+  const result = await service.createShare({ ...expiringShareInput, permissions: 1 });
+  assert.equal(result.alreadyExisted, true);
+  assert.equal(result.share.permissions, 15);
+  assert.equal(result.share.expiration, expiringShare.expiration);
+  assert.deepEqual(calls.map(({ init }) => init.method), ['GET', 'PUT']);
+  assert.match(calls[1].url, /\/shares\/42\?format=json$/);
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(calls[1].init.body)), { expireDate: '9999-05-31' });
+});
+
+for (const expireDate of [undefined, '', '9999-05-31']) {
+  test(`an existing expiration is preserved without a redundant write for ${String(expireDate)}`, async () => {
+    const calls = [];
+    const service = new OwnCloudShareService(async (_url, init) => {
+      calls.push(init.method);
+      return ocsResponse([expiringShare]);
+    });
+    const result = await service.createShare({ ...expiringShareInput, expireDate });
+    assert.equal(result.share.expiration, expiringShare.expiration);
+    assert.deepEqual(calls, ['GET']);
+  });
+}
+
+test('an invalid expiration is rejected before any service network request', async () => {
+  let calls = 0;
+  const service = new OwnCloudShareService(async () => { calls += 1; throw new Error('Unexpected network request'); });
+  await assert.rejects(() => service.createShare({ ...expiringShareInput, expireDate: '9999-02-30' }), /expiration ownCloud/);
+  assert.equal(calls, 0);
+});
+
+for (const existing of [false, true]) {
+  for (const expiration of [null, '9999-06-01 00:00:00']) {
+    test(`a ${existing ? 'reused' : 'new'} share cannot report success for unconfirmed expiration ${expiration}`, async () => {
+      const service = new OwnCloudShareService(async (_url, init) => ocsResponse(init.method === 'GET'
+        ? (existing ? [{ ...expiringShare, expiration: null }] : [])
+        : { ...expiringShare, expiration }));
+      await assert.rejects(() => service.createShare(expiringShareInput), /n’a pas confirmé la date d’expiration/);
+    });
+  }
+}
+
+test('a server expiration update failure remains visible', async () => {
+  const calls = [];
+  const service = new OwnCloudShareService(async (_url, init) => {
+    calls.push(init.method);
+    return init.method === 'GET'
+      ? ocsResponse([{ ...expiringShare, expiration: null }])
+      : new Response(JSON.stringify({ ocs: { meta: { status: 'failure', statuscode: 403, message: 'Expiration forbidden' }, data: [] } }), { status: 403 });
+  });
+  await assert.rejects(() => service.createShare(expiringShareInput), /Expiration forbidden/);
+  assert.deepEqual(calls, ['GET', 'PUT']);
 });
 
 test('sendShareNotification posts the internal share identifiers', async () => {

@@ -323,6 +323,7 @@ const elements = {
   ocPassword: document.getElementById('oc-password') as HTMLInputElement,
   ocRemoteRoot: document.getElementById('oc-remote-root') as HTMLInputElement,
   ocPermissions: document.getElementById('oc-permissions') as HTMLSelectElement,
+  ocExpireDate: document.getElementById('oc-expire-date') as HTMLInputElement,
   ocUploadDefault: document.getElementById('oc-upload-default') as HTMLInputElement,
   ocNotifyEmail: document.getElementById('oc-notify-email') as HTMLInputElement,
   ocNotifyEmailControl: document.getElementById('oc-notify-email-control') as HTMLElement,
@@ -1659,6 +1660,7 @@ async function initSharingPanel(): Promise<void> {
   const api = window.electronAPI;
   if (!api?.ownCloudGetConfig) return;
   sharingPanelBusy = true;
+  elements.ocExpireDate.min = getSharingExpirationMinimum();
   updateSharingActionStates();
   try {
     const config = await api.ownCloudGetConfig() as OwnCloudConfigDescription;
@@ -1692,6 +1694,7 @@ async function handleSharingReset(): Promise<void> {
   sharingAuthenticationBlocked = false;
   sharingPanelLoaded = false;
   elements.ocPassword.value = '';
+  elements.ocExpireDate.value = '';
   elements.ocFolderPath.textContent = 'Aucun dossier sélectionné';
   elements.ocFolderPath.dataset.empty = 'true';
   setOwnCloudMailNotificationAvailability(null);
@@ -1868,6 +1871,7 @@ function updateSharingActionStates(): void {
   elements.ocPickFolder.disabled = sharingOperationActive || sharingPanelBusy;
   elements.ocConnect.disabled = sharingOperationActive || sharingPanelBusy || sharingAuthenticationBlocked;
   elements.ocReset.disabled = sharingOperationActive || sharingPanelBusy;
+  elements.ocExpireDate.disabled = sharingOperationActive || sharingPanelBusy;
   elements.ocNotifyEmail.disabled = sharingOperationActive || sharingPanelBusy || sharingMailNotificationAvailable !== true;
   elements.ocNotifyEmailControl.dataset.disabled = String(elements.ocNotifyEmail.disabled);
   if (sharingOperationActive || sharingPanelBusy) {
@@ -1887,6 +1891,20 @@ function updateSharingActionStates(): void {
 function setSharingOperationActive(active: boolean): void {
   sharingOperationActive = active;
   updateSharingActionStates();
+}
+
+function getSharingExpirationMinimum(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
+function validateSharingExpirationDate(): boolean {
+  elements.ocExpireDate.min = getSharingExpirationMinimum();
+  if (!elements.ocExpireDate.reportValidity()) {
+    setSharingSummary('error', 'Choisissez une date d’expiration valide, aujourd’hui ou plus tard.');
+    return false;
+  }
+  return true;
 }
 
 function updateSharingRecipientDefaults(): void {
@@ -1933,6 +1951,7 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
       shareWith,
       shareType: 'user',
       permissions: Number(elements.ocPermissions.value),
+      expireDate: elements.ocExpireDate.value || undefined,
       mode: modeSelect.value,
       sendNotification: elements.ocNotifyEmail.checked && sharingMailNotificationAvailable === true,
     });
@@ -1948,6 +1967,10 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
       );
     }
     const reused = response.alreadyExisted ? ' Partage déjà existant.' : '';
+    const expirationDate = response.share.expiration?.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s|$)/);
+    const expiration = expirationDate
+      ? ` Expiration : ${expirationDate[3]}/${expirationDate[2]}/${expirationDate[1]}.`
+      : '';
     const notification = response.notification as {
       requested?: boolean;
       sent?: boolean;
@@ -1956,7 +1979,7 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
     const notificationResult = notification?.sent
       ? ' Demande de notification acceptée par ownCloud.'
       : '';
-    const shareResult = `Partage disponible pour ${response.share.shareWith}.${reused}${uploaded}${notificationResult}`;
+    const shareResult = `Partage disponible pour ${response.share.shareWith}.${reused}${uploaded}${expiration}${notificationResult}`;
     if (notification?.error) {
       setSharingRecipientState(
         row,
@@ -1987,6 +2010,7 @@ async function shareSingleRecipient(row: HTMLElement, recipient: SharingRecipien
 
 async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient): Promise<void> {
   if (sharingOperationActive || sharingPanelBusy || !sharingConnectionReady) return;
+  if (!validateSharingExpirationDate()) return;
   sharingBatchCancelled = false;
   setSharingOperationActive(true);
   try {
@@ -2009,6 +2033,7 @@ async function handleSharingSingle(row: HTMLElement, recipient: SharingRecipient
 
 async function handleSharingShareAll(): Promise<void> {
   if (sharingOperationActive || sharingPanelBusy || !sharingConnectionReady) return;
+  if (!validateSharingExpirationDate()) return;
   const rows = Array.from(elements.ocRecipientsList.querySelectorAll<HTMLElement>('[data-recipient]'));
   let successes = 0;
   let warnings = 0;

@@ -119,6 +119,9 @@ Le test vérifie l'authentification, WebDAV, l'API de partage et la disponibilit
     *   Option décochée : aucun fichier n'est envoyé. L'application tente de partager les dossiers qui existent déjà sur ownCloud.
 4.  Choisissez les permissions : lecture seule, lecture et dépôt, ou tous droits.
 5.  Cochez **"Envoyer une notification par e-mail"** si cette fonction est autorisée par le serveur ownCloud.
+6.  Facultativement, choisissez une **Date d’expiration**, aujourd’hui ou plus tard. Elle s’applique aux destinataires traités par **"Partager"** ou **"Partager tout"**, y compris si leur partage existe déjà. La date confirmée par ownCloud apparaît dans le résultat. Un refus du serveur ou une date non confirmée est signalé en erreur.
+
+Laissez la date vide pour conserver l’expiration d’un partage existant ou utiliser le réglage du serveur lors d’un nouveau partage. Vider ce champ ne supprime pas une expiration déjà définie. La date saisie n’est pas enregistrée pour les prochaines sessions.
 
 Pendant le téléversement, chaque ligne affiche le fichier en cours, le nombre de fichiers traités et une barre de progression. Pour un dossier vide, le dossier distant est créé sans fichier à téléverser.
 
@@ -143,7 +146,7 @@ Lorsque la case **"Envoyer une notification par e-mail"** est cochée, chaque ac
 
 ### 4. Réinitialiser l'onglet
 
-Le bouton **"Réinitialiser l’onglet"** efface la sélection du dossier local, les destinataires, les résultats, la validation de la connexion et le mot de passe en cours de saisie. Il recharge la configuration enregistrée et conserve les identifiants stockés. Testez à nouveau la connexion avant de partager.
+Le bouton **"Réinitialiser l’onglet"** efface la sélection du dossier local, les destinataires, les résultats, la date d’expiration saisie, la validation de la connexion et le mot de passe en cours de saisie. Il recharge la configuration enregistrée et conserve les identifiants stockés. Testez à nouveau la connexion avant de partager.
 
 Cette action ne supprime aucun partage ni fichier distant. Le bouton est indisponible pendant une opération en cours.
 
