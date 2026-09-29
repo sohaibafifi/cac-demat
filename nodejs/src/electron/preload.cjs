@@ -8,7 +8,7 @@ const api = {
   selectCsv: () => ipcRenderer.invoke('dialog:select-csv'),
   setFolder: (folder) => ipcRenderer.invoke('coordinator:set-folder', folder),
   setReviewersCsv: (filePath) => ipcRenderer.invoke('coordinator:set-reviewers-csv', filePath),
-  setMembersCsv: (filePath) => ipcRenderer.invoke('coordinator:set-members-csv', filePath),
+  setMembersCsv: (filePath, mode = 'replace') => ipcRenderer.invoke('coordinator:set-members-csv', filePath, mode),
   clearReviewersCsv: () => ipcRenderer.invoke('coordinator:clear-reviewers-csv'),
   clearMembersCsv: () => ipcRenderer.invoke('coordinator:clear-members-csv'),
   resetSession: () => ipcRenderer.invoke('coordinator:reset-session'),

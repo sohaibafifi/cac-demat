@@ -175,12 +175,12 @@ const main = async () => {
   const wrapStage = (stage) => {
     const name = stage.constructor?.name ?? 'AnonymousStage';
     const wrapper = {
-      async process(context, logger, abortSignal) {
+      async process(context, logger, abortSignal, executionOptions) {
         const inputKey = context.workingPath;
         const startedAt = performance.now();
 
         try {
-          return await stage.process(context, logger, abortSignal);
+          return await stage.process(context, logger, abortSignal, executionOptions);
         } finally {
           addStageTiming(
             name,
@@ -215,11 +215,11 @@ const main = async () => {
   const resolver = new QpdfCommandResolver();
   const passwordGenerator = new PasswordGenerator();
   const pipeline = new PdfProcessingPipeline([
-    wrapStage(new DocxConversionStage()),
-    wrapStage(new CleanStage(resolver)),
-    wrapStage(new WatermarkStage(resolver)),
-    wrapStage(new MetadataStage(resolver)),
-    wrapStage(new RestrictionStage(resolver, passwordGenerator)),
+    { stage: wrapStage(new DocxConversionStage()) },
+    { id: 'clean', stage: wrapStage(new CleanStage(resolver)) },
+    { id: 'watermark', stage: wrapStage(new WatermarkStage(resolver)) },
+    { id: 'metadata', stage: wrapStage(new MetadataStage(resolver)) },
+    { id: 'restriction', stage: wrapStage(new RestrictionStage(resolver, passwordGenerator)) },
   ]);
 
   const packageProcessor = new PdfPackageProcessor(pipeline);
@@ -292,6 +292,10 @@ const main = async () => {
       console.log(JSON.stringify(summary, null, 2));
     } else {
       printHumanSummary(summary);
+    }
+
+    if (stats.errors.length > 0 || stats.missingFiles.length > 0) {
+      process.exitCode = 1;
     }
   } finally {
     if (!options.keepOutput) {

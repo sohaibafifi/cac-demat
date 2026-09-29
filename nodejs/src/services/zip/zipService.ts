@@ -1,5 +1,6 @@
-import { copyFile, mkdir, readdir, realpath, rename, rm, stat } from 'fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readdir, realpath, rename, rm, stat } from 'fs/promises';
 import { randomUUID } from 'crypto';
+import os from 'os';
 import path from 'path';
 import { runCommand } from '../../utils/process.js';
 import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
@@ -47,6 +48,7 @@ export class ZipService {
           summary.skipped += 1;
         }
       } catch (error) {
+        throwIfPipelineCancelled(options.abortSignal);
         if (isPipelineCancelledError(error)) {
           throw error;
         }
@@ -81,58 +83,73 @@ export class ZipService {
       realpath(sourceDir),
       realpath(path.dirname(zipPath)),
     ]);
-    const isInsideSource = this.containsPath(resolvedSourceDir, resolvedZipDir);
-    const workingDirectory = isInsideSource ? path.dirname(resolvedSourceDir) : resolvedZipDir;
-    const workingZipPath = path.join(
-      workingDirectory,
-      `.${path.basename(zipPath, path.extname(zipPath))}.partial-${randomUUID()}.zip`,
-    );
-
-    if (archiveExists) {
-      await copyFile(zipPath, workingZipPath);
-    }
-
-    const cwd = path.dirname(sourceDir);
+    const resolvedZipPath = path.join(resolvedZipDir, path.basename(zipPath));
+    const workspace = await mkdtemp(path.join(os.tmpdir(), 'cac-zip-'));
+    const workingZipPath = path.join(workspace, 'archive.zip');
+    const stagedZipPath = path.join(resolvedZipDir, `.cac-${randomUUID()}.zip`);
+    const cwd = path.join(workspace, 'input');
     const folderName = path.basename(sourceDir);
 
-    const { command, args } = process.platform === 'win32'
-      ? this.resolvePowershellCommand(folderName, workingZipPath, archiveExists)
-      : this.resolveZipCommand(folderName, workingZipPath);
-
-    const onOutput = (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (trimmed) {
-          options.logger?.(`[zip] ${trimmed}`);
-        }
-      }
-    };
-
-    let result;
     try {
-      result = await runCommand(command, args, {
+      await mkdir(cwd);
+      // Compress locally so PowerShell does not traverse network paths. Keep the
+      // original root name inside the archive and exclude any previous archive.
+      await cp(resolvedSourceDir, path.join(cwd, folderName), {
+        recursive: true,
+        filter: (candidate) => {
+          throwIfPipelineCancelled(options.abortSignal);
+          return candidate !== resolvedZipPath;
+        },
+      });
+      throwIfPipelineCancelled(options.abortSignal);
+      if (archiveExists) {
+        await copyFile(zipPath, workingZipPath);
+      }
+      throwIfPipelineCancelled(options.abortSignal);
+
+      const { command, args } = process.platform === 'win32'
+        ? this.resolvePowershellCommand(folderName, workingZipPath, archiveExists)
+        : this.resolveZipCommand(folderName, workingZipPath);
+      const onOutput = (chunk: string) => {
+        for (const line of chunk.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (trimmed) options.logger?.(`[zip] ${trimmed}`);
+        }
+      };
+      const result = await runCommand(command, args, {
         cwd,
         onStdout: onOutput,
         onStderr: onOutput,
         abortSignal: options.abortSignal,
       });
+      throwIfPipelineCancelled(options.abortSignal);
+      if (result.exitCode !== 0) {
+        throw new Error(result.stderr.trim() || result.stdout.trim() || 'Échec de la compression.');
+      }
+      const archive = await stat(workingZipPath);
+      if (!archive.isFile() || archive.size === 0) {
+        throw new Error("L'outil de compression n'a pas produit d'archive.");
+      }
+
+      // Stage on the destination volume before replacement. Short names also
+      // avoid exceeding filename limits when the final ZIP has a long name.
+      await copyFile(workingZipPath, stagedZipPath);
+      throwIfPipelineCancelled(options.abortSignal);
+      await this.replaceArchive(stagedZipPath, zipPath, archiveExists);
     } catch (error) {
-      await rm(workingZipPath, { force: true });
+      throwIfPipelineCancelled(options.abortSignal);
+      if (isPipelineCancelledError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Impossible de créer l'archive pour ${label ?? folderName}: ${message}`);
+    } finally {
+      await rm(stagedZipPath, { force: true }).catch(() => undefined);
+      await rm(workspace, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined);
     }
-
-    if (result.exitCode !== 0) {
-      await rm(workingZipPath, { force: true });
-      const error = result.stderr.trim() || result.stdout.trim();
-      throw new Error(error || `Échec de la création de l'archive pour ${label ?? folderName}.`);
-    }
-
-    await this.replaceArchive(workingZipPath, zipPath, archiveExists);
 
     options.logger?.(`${archiveExists ? 'Archive complétée' : 'Archive générée'} pour ${label ?? folderName}: ${zipPath}`);
 
     if (options.removeSource) {
+      throwIfPipelineCancelled(options.abortSignal);
       const [sourceDirResolved, zipPathResolved] = await Promise.all([
         realpath(sourceDir),
         realpath(zipPath),
@@ -169,7 +186,7 @@ export class ZipService {
     const escapedFolder = folderName.replace(/'/g, "''");
     const escapedZip = zipPath.replace(/'/g, "''");
     const mode = archiveExists ? '-Update' : '-Force';
-    const script = `Compress-Archive -LiteralPath '${escapedFolder}' -DestinationPath '${escapedZip}' ${mode}`;
+    const script = `$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Compress-Archive -LiteralPath '${escapedFolder}' -DestinationPath '${escapedZip}' ${mode} -ErrorAction Stop`;
 
     return {
       command: 'powershell.exe',
@@ -183,7 +200,7 @@ export class ZipService {
       return;
     }
 
-    const backupPath = `${zipPath}.backup-${randomUUID()}`;
+    const backupPath = path.join(path.dirname(zipPath), `.cac-backup-${randomUUID()}.zip`);
     await rename(zipPath, backupPath);
     try {
       await rename(workingZipPath, zipPath);
@@ -206,7 +223,10 @@ export class ZipService {
 
   private async hasFiles(dir: string, abortSignal?: AbortSignal): Promise<boolean> {
     throwIfPipelineCancelled(abortSignal);
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(dir, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    });
 
     for (const entry of entries) {
       throwIfPipelineCancelled(abortSignal);

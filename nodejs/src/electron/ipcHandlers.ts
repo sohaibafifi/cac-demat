@@ -60,9 +60,15 @@ export class IpcHandlerRegistry {
       return serializeCoordinatorState(coordinator);
     });
 
-    this.ipcMain.handle('coordinator:set-members-csv', async (_event: IpcMainInvokeEvent, filePath: string) => {
+    this.ipcMain.handle('coordinator:set-members-csv', async (_event: IpcMainInvokeEvent, filePath: string, mode: unknown = 'replace') => {
+      if (typeof filePath !== 'string' || !filePath.trim()) {
+        throw new Error('Chemin du fichier membres invalide.');
+      }
+      if (mode !== 'replace' && mode !== 'append') {
+        throw new Error('Mode d’import des membres invalide.');
+      }
       const coordinator = this.getCoordinator();
-      await coordinator.loadMembersCsv(filePath);
+      await coordinator.loadMembersCsv(filePath, mode);
       return serializeCoordinatorState(coordinator);
     });
 

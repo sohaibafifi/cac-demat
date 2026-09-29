@@ -264,6 +264,7 @@ const elements = {
   folderPath: document.getElementById('folder-path') as HTMLElement,
   reviewersCsvPath: document.getElementById('reviewers-csv-path') as HTMLElement,
   membersCsvPath: document.getElementById('members-csv-path') as HTMLElement,
+  membersImportStatus: document.getElementById('members-import-status') as HTMLElement,
   logOutput: document.getElementById('log-output') as HTMLTextAreaElement,
   errorPanel: document.getElementById('error-panel') as HTMLElement,
   errorOutput: document.getElementById('error-output') as HTMLElement,
@@ -295,6 +296,7 @@ const elements = {
   loadReviewersCsv: document.getElementById('load-reviewers-csv') as HTMLButtonElement,
   resetReviewersCsv: document.getElementById('reset-reviewers-csv') as HTMLButtonElement,
   loadMembersCsv: document.getElementById('load-members-csv') as HTMLButtonElement,
+  appendMembersCsv: document.getElementById('append-members-csv') as HTMLButtonElement,
   resetMembersCsv: document.getElementById('reset-members-csv') as HTMLButtonElement,
   manualReviewerForm: document.getElementById('manual-reviewer-form') as HTMLFormElement,
   manualMemberForm: document.getElementById('manual-member-form') as HTMLFormElement,
@@ -623,6 +625,7 @@ function updateActionStates(): void {
     elements.resetSession.disabled = true;
     elements.loadReviewersCsv.disabled = true;
     elements.loadMembersCsv.disabled = true;
+    elements.appendMembersCsv.disabled = true;
     elements.generateReviewerReporting.disabled = true;
     elements.openReviewerReporting.disabled = true;
     elements.cacTypeSelect.disabled = true;
@@ -655,7 +658,8 @@ function updateActionStates(): void {
   elements.selectFolder.disabled = busy;
   elements.resetSession.disabled = busy || state.running;
   elements.loadReviewersCsv.disabled = busy;
-  elements.loadMembersCsv.disabled = busy;
+  elements.loadMembersCsv.disabled = busy || state.running;
+  elements.appendMembersCsv.disabled = busy || state.running;
   elements.generateReviewerReporting.disabled = busy || state.running;
   elements.openReviewerReporting.disabled = busy || !lastReviewerReportingPath;
   elements.cacTypeSelect.disabled = busy || state.running;
@@ -714,6 +718,7 @@ function render(): void {
   elements.folderPath.textContent = formatPath(currentState.folder, 'Aucun dossier sélectionné');
   renderCsvPaths(elements.reviewersCsvPath, currentState.csvReviewers, 'Aucun fichier sélectionné');
   renderCsvPaths(elements.membersCsvPath, currentState.csvMembers, 'Aucun fichier sélectionné');
+  elements.membersImportStatus.textContent = `Liste active : ${currentState.membersFromCsv.length} membre(s) importé(s), ${currentState.csvMembers.length} fichier(s). Attributions manuelles : ${currentState.membersManual.length}.`;
 
   if (elements.cacNameInput.value !== currentState.cacName) {
     elements.cacNameInput.value = currentState.cacName;
@@ -1405,7 +1410,9 @@ async function showMemberImportSummary(state: CoordinatorState | null): Promise<
     .slice(0, 8);
 
   const lines: string[] = [
+    `Fichiers actifs : ${state.csvMembers.length}`,
     `Membres importés : ${totalMembers}`,
+    `Attributions manuelles conservées : ${state.membersManual.length}`,
     `Références de fichiers : ${totalFileRefs}`,
   ];
 
@@ -1438,6 +1445,24 @@ async function showMemberImportSummary(state: CoordinatorState | null): Promise<
     message: totalMembers === 0 ? 'Aucun membre importé.' : 'Import des membres terminé.',
     detail: lines.join('\n'),
   });
+}
+
+async function handleMemberImport(mode: 'replace' | 'append' = 'replace'): Promise<void> {
+  if (busy || currentState?.running) return;
+  setBusy(true);
+  try {
+    const api = await getElectronApiOrWarn();
+    if (!api) return;
+    const selected = await api.selectCsv();
+    if (!selected) return;
+    const state = await updateCoordinator(() => api.setMembersCsv(selected, mode));
+    await showMemberImportSummary(state);
+  } catch (error) {
+    console.error(error);
+    alert(formatError(error));
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function updateCoordinator(action: () => Promise<CoordinatorState>): Promise<CoordinatorState | null> {
@@ -2370,20 +2395,8 @@ document.addEventListener('DOMContentLoaded', () => {
     await updateCoordinator(() => api.clearReviewersCsv());
   });
 
-  elements.loadMembersCsv.addEventListener('click', async () => {
-    const api = await getElectronApiOrWarn();
-    if (!api) {
-      return;
-    }
-
-    const selected = await api.selectCsv();
-    if (!selected) {
-      return;
-    }
-
-    const state = await updateCoordinator(() => api.setMembersCsv(selected));
-    await showMemberImportSummary(state);
-  });
+  elements.loadMembersCsv.addEventListener('click', () => handleMemberImport());
+  elements.appendMembersCsv.addEventListener('click', () => handleMemberImport('append'));
 
   elements.openMembersCsv.addEventListener('click', async () => {
     const paths = currentState?.csvMembers ?? [];

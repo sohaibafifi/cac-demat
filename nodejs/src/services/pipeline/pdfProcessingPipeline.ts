@@ -1,4 +1,5 @@
-import { copyFile, mkdir, unlink } from 'fs/promises';
+import { copyFile, mkdir, rename, unlink } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { PdfProcessingContext } from '../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger, SharedResourceStage } from './stages/contracts/pdfProcessingStage.js';
@@ -37,7 +38,7 @@ export class PdfProcessingPipeline {
       }
 
       throwIfPipelineCancelled(abortSignal);
-      current = await this.finalize(current);
+      current = await this.finalize(current, abortSignal);
       return current;
     } finally {
       await this.cleanup(current);
@@ -53,19 +54,26 @@ export class PdfProcessingPipeline {
     return this.stages.filter((entry) => !entry.id || active.has(entry.id));
   }
 
-  private async finalize(context: PdfProcessingContext): Promise<PdfProcessingContext> {
+  private async finalize(context: PdfProcessingContext, abortSignal?: AbortSignal): Promise<PdfProcessingContext> {
     const targetPath = context.targetPath();
     if (context.workingPath === targetPath) {
       return context;
     }
 
     await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o755 });
-    await copyFile(context.workingPath, targetPath);
+    const pendingPath = path.join(path.dirname(targetPath), `.cac-pdf-${randomUUID()}.tmp`);
+    try {
+      await copyFile(context.workingPath, pendingPath);
+      throwIfPipelineCancelled(abortSignal);
+      await rename(pendingPath, targetPath);
+    } finally {
+      await unlink(pendingPath).catch(() => undefined);
+    }
     return context.withWorkingPath(targetPath, false);
   }
 
   private async cleanup(context: PdfProcessingContext): Promise<void> {
-    const finalPath = context.workingPath;
+    const finalPath = context.targetPath();
 
     for (const path of context.temporaryPaths) {
       if (!path || path === finalPath) {

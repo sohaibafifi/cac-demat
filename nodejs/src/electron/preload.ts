@@ -12,7 +12,8 @@ const api = {
   selectCsv: () => ipcRenderer.invoke('dialog:select-csv') as Promise<string | null>,
   setFolder: (folder: string) => ipcRenderer.invoke('coordinator:set-folder', folder) as Promise<any>,
   setReviewersCsv: (filePath: string) => ipcRenderer.invoke('coordinator:set-reviewers-csv', filePath) as Promise<any>,
-  setMembersCsv: (filePath: string) => ipcRenderer.invoke('coordinator:set-members-csv', filePath) as Promise<any>,
+  setMembersCsv: (filePath: string, mode: 'replace' | 'append' = 'replace') =>
+    ipcRenderer.invoke('coordinator:set-members-csv', filePath, mode) as Promise<any>,
   clearReviewersCsv: () => ipcRenderer.invoke('coordinator:clear-reviewers-csv') as Promise<any>,
   clearMembersCsv: () => ipcRenderer.invoke('coordinator:clear-members-csv') as Promise<any>,
   resetSession: () => ipcRenderer.invoke('coordinator:reset-session') as Promise<any>,

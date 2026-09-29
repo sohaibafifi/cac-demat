@@ -424,28 +424,39 @@ export class DashboardCoordinator {
     }
   }
 
-  async loadMembersCsv(path: string): Promise<void> {
+  async loadMembersCsv(path: string, mode: 'replace' | 'append' = 'replace'): Promise<void> {
     const normalized = path.trim();
     if (!normalized) {
-      this.appendLog('Chemin du fichier membres invalide.');
-      return;
+      throw new Error('Chemin du fichier membres invalide.');
+    }
+    if (mode !== 'replace' && mode !== 'append') {
+      throw new Error('Mode d’import des membres invalide.');
+    }
+    if (this.running) {
+      throw new Error('Attendez la fin de la préparation avant de modifier la liste des membres.');
     }
 
     const existed = this.memberImports.has(normalized);
-    this.csvMembers = [...this.csvMembers.filter((p) => p !== normalized), normalized];
-    this.appendLog(`${existed ? 'Rechargement' : 'Ajout'} du fichier des membres: ${normalized}`);
-
-    const previous = this.memberImports.get(normalized) ?? [];
-
+    let assignments: MemberAssignment[];
     try {
-      const assignments = await this.csvLoader.members(normalized, this.availableFiles);
-      this.memberImports.set(normalized, assignments);
-      this.refreshMembersFromImports();
-      this.appendLog('Membres importés.');
+      assignments = await this.csvLoader.members(normalized, this.availableFiles);
     } catch (error) {
-      this.memberImports.set(normalized, previous);
-      this.appendLog(`Échec de lecture du fichier des membres: ${this.getErrorMessage(error)}`);
+      const message = `Échec de lecture du fichier des membres: ${this.getErrorMessage(error)}. La liste active reste inchangée.`;
+      this.appendLog(message);
+      throw new Error(message);
     }
+
+    if (mode === 'replace') {
+      this.csvMembers = [normalized];
+      this.memberImports = new Map([[normalized, assignments]]);
+    } else {
+      this.csvMembers = [...this.csvMembers.filter((p) => p !== normalized), normalized];
+      this.memberImports.set(normalized, assignments);
+    }
+    this.refreshMembersFromImports();
+    const action = mode === 'replace' ? 'Nouvelle liste de membres' : existed ? 'Rechargement du fichier des membres' : 'Ajout du fichier des membres';
+    this.appendLog(`${action}: ${normalized}`);
+    this.appendLog(`Liste active: ${this.membersFromCsv.length} membre(s) importé(s) depuis ${this.csvMembers.length} fichier(s). Les attributions manuelles sont conservées.`);
   }
 
   clearReviewersCsv(): void {

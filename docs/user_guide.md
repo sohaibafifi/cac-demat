@@ -189,6 +189,10 @@ Permet de distribuer des lots de dossiers à des membres.
 
 > **Recommandation :** Il est recommandé de préparer des répertoires types par type de membres (MCF, PR, etc.) et de leur affecter ces répertoires.
 
+**Charger une nouvelle liste** remplace les imports précédents. Pour passer des membres MCF aux membres PR, utilisez ce bouton avec le fichier PR. **Ajouter à la liste** permet de cumuler volontairement plusieurs fichiers.
+
+Les fichiers actifs et le nombre de membres importés sont affichés sous les boutons. Les attributions manuelles sont conservées : vérifiez-les également avant de lancer le pipeline. Si un fichier ne peut pas être lu, une erreur est affichée et la liste précédente reste active.
+
 
 ## Attribution Manuelle (Membres)
 
@@ -202,6 +206,10 @@ Vérifiez les **Étapes actives membres**, puis cliquez sur **"🛡️ Lancer le
 
 La conversion des documents Word/ODT/RTF en PDF reste automatique pour les deux pipelines, même si toutes les étapes optionnelles sont désactivées.
 Les sous-options **Restrictions PDF** sont indépendantes entre rapporteurs et membres.
+
+Les traitements PDF utilisent une copie temporaire locale de chaque PDF source, partagée entre les membres d'une même exécution. Les documents Word/ODT/RTF sont convertis depuis leur emplacement d'origine et leur PDF converti est réutilisé. La compression des ZIP est également effectuée dans le dossier temporaire local, puis les fichiers terminés sont copiés vers la destination. Prévoyez de l'espace libre sur le disque local pour ces fichiers temporaires, qui sont nettoyés à la fin du traitement.
+
+Changer la liste active ne supprime pas les dossiers ni les ZIP produits lors d'une exécution précédente. Des dossiers MCF peuvent donc rester présents après une génération PR sans avoir été générés à nouveau.
 
 ---
 

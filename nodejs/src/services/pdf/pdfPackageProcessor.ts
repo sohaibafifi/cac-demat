@@ -4,6 +4,7 @@ import os from 'os';
 import { PdfProcessingPipeline } from '../pipeline/pdfProcessingPipeline.js';
 import { NameSanitizer } from '../../support/text/nameSanitizer.js';
 import { PdfProcessingContext } from './pdfProcessingContext.js';
+import { LocalSourceCache } from './localSourceCache.js';
 import { isPipelineCancelledError, throwIfPipelineCancelled } from '../pipeline/pipelineCancelledError.js';
 import { isSupportedFile } from '../pipeline/stages/docxConversionStage.js';
 import type { PdfRestrictionSelection, PipelineStageId } from '../pipeline/pipelineStages.js';
@@ -114,6 +115,7 @@ export class PdfPackageProcessor {
     };
     const missing = new Set<string>();
     const tasks: Array<() => Promise<void>> = [];
+    const localSources = new LocalSourceCache();
     const destinations = new Map<string, { source: string; file: PdfInventoryEntry; recipient: string }>();
     const realDirectories = new Map<string, Promise<string>>();
     const realSources = new Map<string, Promise<string>>();
@@ -189,8 +191,13 @@ export class PdfPackageProcessor {
         tasks.push(async () => {
           throwIfCancelled();
           try {
-            await mkdir(destinationDir, { recursive: true, mode: 0o755 });
-            const result = await this.pipeline.process(context, logger, abortSignal, activeStages, restrictionOptions);
+            // Office conversion already caches its local PDF. Keep the original
+            // document path so relative images and links still resolve there.
+            const localPath = path.extname(file.path).toLowerCase() === '.pdf'
+              ? await localSources.get(file.path, abortSignal)
+              : file.path;
+            const localContext = context.withWorkingPath(localPath, false);
+            const result = await this.pipeline.process(localContext, logger, abortSignal, activeStages, restrictionOptions);
             stats.processedFiles += 1;
 
             const current = (processedByRecipient.get(name) ?? 0) + 1;
@@ -241,7 +248,13 @@ export class PdfPackageProcessor {
     try {
       await this.runConcurrently(tasks, concurrency, abortSignal);
     } finally {
-      await this.pipeline.disposeSharedResources();
+      try {
+        await this.pipeline.disposeSharedResources();
+      } finally {
+        await localSources.dispose().catch((error) => {
+          logger?.(`Nettoyage des copies locales impossible : ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
     }
 
     stats.processedRecipients = Array.from(processedByRecipient.values()).filter((count) => count > 0).length;
@@ -311,7 +324,10 @@ export class PdfPackageProcessor {
       }
     });
 
-    await Promise.all(workers);
+    // Wait for every worker before removing shared local inputs or stage caches.
+    const results = await Promise.allSettled(workers);
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
   }
 
   private resolveConcurrency(taskCount: number): number {

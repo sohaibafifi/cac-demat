@@ -1,5 +1,7 @@
-import { mkdir } from 'fs/promises';
+import { mkdir, unlink } from 'fs/promises';
 import path from 'path';
+import os from 'os';
+import { randomUUID } from 'crypto';
 import { PdfProcessingContext } from '../../pdf/pdfProcessingContext.js';
 import { PdfProcessingStage, PipelineLogger } from './contracts/pdfProcessingStage.js';
 import { QpdfCommandResolver } from '../../pdf/qpdfCommandResolver.js';
@@ -25,11 +27,16 @@ export class RestrictionStage implements PdfProcessingStage {
     options?: PipelineExecutionOptions,
   ): Promise<PdfProcessingContext> {
     throwIfPipelineCancelled(abortSignal);
-    const finalPath = context.targetPath();
+    const restrictedPath = path.join(os.tmpdir(), `cac_demat_restricted_${randomUUID()}.pdf`);
     const password = this.passwordGenerator.generate(12);
     const restrictionOptions = options?.restrictionOptions ?? createDefaultPdfRestrictionSelection();
 
-    await this.applyRestrictions(context.workingPath, finalPath, password, restrictionOptions, logger, abortSignal);
+    try {
+      await this.applyRestrictions(context.workingPath, restrictedPath, password, restrictionOptions, logger, abortSignal);
+    } catch (error) {
+      await unlink(restrictedPath).catch(() => undefined);
+      throw error;
+    }
 
     if (context.useDefaultLogging) {
       logger?.(
@@ -37,7 +44,7 @@ export class RestrictionStage implements PdfProcessingStage {
       );
     }
 
-    return context.withWorkingPath(finalPath, false).withPassword(password);
+    return context.withWorkingPath(restrictedPath).withPassword(password);
   }
 
   private async applyRestrictions(

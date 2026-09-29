@@ -17,6 +17,93 @@ function packageNumbers(coordinator, file) {
     .map((pkg) => [pkg.name, pkg.reviewerNumberByFile[file.toLowerCase()]]));
 }
 
+async function memberImportFixture(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cac-member-import-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const mcf = path.join(root, 'mcf.csv');
+  const pr = path.join(root, 'pr.csv');
+  await writeFile(mcf, 'Membre;Fichier\nExemple-Membre Prénom-Composé;MCF.pdf\n');
+  await writeFile(pr, 'Membre;Fichier\nMembre PR;PR.pdf\n');
+  return { root, mcf, pr };
+}
+
+test('a new member list replaces MCF with PR for generation and stays replaced after folder refresh', async (t) => {
+  const { root, mcf, pr } = await memberImportFixture(t);
+  const runs = [];
+  const workspace = new WorkspaceService();
+  workspace.resolveOutputPath = async () => path.join(root, 'output');
+  const service = { async prepare(entries) {
+    runs.push(entries);
+    return { requestedRecipients: entries.length, processedRecipients: entries.length, processedFiles: entries.length, missingFiles: [], errors: [] };
+  } };
+  const coordinator = new DashboardCoordinator(new CsvAssignmentLoader(), workspace, {}, service);
+  await coordinator.setFolder(root);
+  coordinator.cacName = 'CAC';
+  await coordinator.loadMembersCsv(mcf);
+  await coordinator.loadMembersCsv(pr);
+  assert.deepEqual(coordinator.csvMembers, [pr]);
+  assert.deepEqual(coordinator.membersFromCsv.map(({ name }) => name), ['Membre PR']);
+
+  await coordinator.setFolder(root);
+  assert.deepEqual(coordinator.csvMembers, [pr]);
+  assert.deepEqual(coordinator.membersFromCsv.map(({ name }) => name), ['Membre PR']);
+  await coordinator.executeRun('members');
+  assert.equal(runs.length, 1);
+  assert.deepEqual(runs[0], [{ name: 'Membre PR', files: ['PR.pdf'] }]);
+});
+
+test('explicit member append merges sources and reloading a file does not duplicate members', async (t) => {
+  const { mcf, pr } = await memberImportFixture(t);
+  const coordinator = createCoordinator();
+  await coordinator.loadMembersCsv(mcf);
+  await coordinator.loadMembersCsv(pr, 'append');
+  await coordinator.loadMembersCsv(pr, 'append');
+  assert.deepEqual(coordinator.csvMembers, [mcf, pr]);
+  assert.deepEqual(coordinator.membersFromCsv.map(({ name }) => name), ['Exemple-Membre Prénom-Composé', 'Membre PR']);
+
+  await writeFile(pr, 'Membre;Fichier\nExemple-Membre Prénom-Composé;PR.pdf\n');
+  await coordinator.loadMembersCsv(pr, 'append');
+  assert.deepEqual(coordinator.membersFromCsv, [{
+    name: 'Exemple-Membre Prénom-Composé', files: ['MCF.pdf', 'PR.pdf'], source: 'csv',
+  }]);
+});
+
+test('replacing imported members retains separate manual assignments', async (t) => {
+  const { mcf, pr } = await memberImportFixture(t);
+  const coordinator = createCoordinator();
+  await coordinator.loadMembersCsv(mcf);
+  coordinator.addManualMember('Membre manuel', 'Manuel.pdf');
+  await coordinator.loadMembersCsv(pr);
+  assert.deepEqual(coordinator.membersFromCsv.map(({ name }) => name), ['Membre PR']);
+  assert.deepEqual(coordinator.membersManual, [{ name: 'Membre manuel', files: ['Manuel.pdf'], source: 'manual' }]);
+  assert.deepEqual(coordinator.combinedMembers().map(({ name }) => name), ['Membre PR', 'Membre manuel']);
+});
+
+for (const mode of ['replace', 'append']) {
+  test(`unreadable ${mode} member import rejects without changing the active list`, async (t) => {
+    const { root, mcf } = await memberImportFixture(t);
+    const coordinator = createCoordinator();
+    await coordinator.loadMembersCsv(mcf);
+    const before = structuredClone(coordinator.membersFromCsv);
+    await assert.rejects(() => coordinator.loadMembersCsv(path.join(root, 'missing.csv'), mode), /La liste active reste inchangée/);
+    assert.deepEqual(coordinator.csvMembers, [mcf]);
+    assert.deepEqual(coordinator.membersFromCsv, before);
+    await coordinator.setFolder(root);
+    assert.deepEqual(coordinator.membersFromCsv, before);
+  });
+}
+
+test('an empty new member file clears the imported list instead of running the old list', async (t) => {
+  const { mcf, pr } = await memberImportFixture(t);
+  const coordinator = createCoordinator();
+  await coordinator.loadMembersCsv(mcf);
+  await writeFile(pr, 'Membre;Fichier\n');
+  await coordinator.loadMembersCsv(pr);
+  assert.deepEqual(coordinator.csvMembers, [pr]);
+  assert.deepEqual(coordinator.membersFromCsv, []);
+  assert.equal(coordinator.getCanRunMembers(), false);
+});
+
 test('merged imports preserve original reviewer numbers across reloads', async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'cac-coordinator-'));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -1326,7 +1326,7 @@ Martin,Marie,Prenom3 Nom3,Prenom4 Nom4</pre>
         <div class="grid">
           <div class="card-group">
             <strong>Import tableur</strong>
-            <p class="text-muted">Chargez un ou plusieurs fichiers CSV ou Excel (.xls/.xlsx) pour attribuer les membres automatiquement.</p>
+            <p class="text-muted">Chargez une nouvelle liste CSV ou Excel (.xls/.xlsx) pour remplacer les imports précédents, par exemple lors du passage des MCF aux PR. Utilisez « Ajouter à la liste » pour cumuler plusieurs fichiers. Les attributions manuelles sont conservées.</p>
             <details class="format-help" style="margin: 0.75rem 0; padding: 0.75rem; background: rgba(37,99,235,0.05); border-radius: 8px; border-left: 3px solid #2563eb;">
               <summary style="cursor: pointer; font-weight: 600; color: #2563eb; user-select: none;">
                 ℹ️ Format du fichier d'import
@@ -1344,11 +1344,13 @@ Marie Martin;.;*.pdf</pre>
               </div>
             </details>
             <div class="csv-row">
-              <button id="load-members-csv" class="secondary csv-btn">📄 Ajouter un fichier</button>
+              <button id="load-members-csv" class="csv-btn">📄 Charger une nouvelle liste</button>
+              <button id="append-members-csv" class="secondary csv-btn">Ajouter à la liste</button>
               <button id="open-members-csv" class="secondary csv-btn">Ouvrir</button>
               <button id="reset-members-csv" class="danger csv-btn">↩️ Réinitialiser</button>
             </div>
-            <div class="path-display" id="members-csv-path">Aucun fichier sélectionné</div>
+            <p class="text-muted" id="members-import-status" aria-live="polite">Aucun membre importé.</p>
+            <div class="path-display" id="members-csv-path" aria-label="Fichiers actifs pour les membres">Aucun fichier sélectionné</div>
           </div>
 
 
