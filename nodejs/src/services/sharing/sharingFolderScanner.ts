@@ -16,11 +16,14 @@ export const deriveOwnCloudUsername = (name: string): string => {
   const parts = normalized.split(/[^a-zA-Z0-9]+/g).filter(Boolean);
   const unchangedOrder = parts.join('.').toLowerCase();
 
-  // A dotted login already specifies its order. For names, infer the surname
-  // only when an uppercase block distinguishes it from the given name.
+  // A dotted login already specifies its order. Fully uppercase names follow
+  // the surname-first convention; mixed-case names can identify the surname.
   if (normalized.includes('.') || parts.length < 2) return unchangedOrder;
   const isSurnamePart = (part: string): boolean => /[A-Z]/.test(part) && part === part.toUpperCase();
   const isGivenNamePart = (part: string): boolean => /[a-z]/.test(part);
+  if (parts.every(isSurnamePart)) {
+    return `${parts[parts.length - 1]}.${parts.slice(0, -1).join('')}`.toLowerCase();
+  }
   const formatName = (given: string[], family: string[]): string => {
     // A lone capital initial is not enough evidence to infer a surname.
     if (family.join('').replace(/[^A-Z]/g, '').length < 2) return unchangedOrder;
