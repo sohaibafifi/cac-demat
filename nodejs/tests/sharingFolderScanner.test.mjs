@@ -43,6 +43,19 @@ test('deriveOwnCloudUsername preserves given-first names with an uppercase famil
   assert.equal(deriveOwnCloudUsername('Prénom-Composé_FAMILLE-TEST'), 'prenomcompose.familletest');
 });
 
+test('deriveOwnCloudUsername treats fully uppercase names as surname-first', () => {
+  assert.equal(deriveOwnCloudUsername('FAMILLEEXEMPLE_PRENOMEXEMPLE'), 'prenomexemple.familleexemple');
+  assert.equal(deriveOwnCloudUsername('FAMILLE-TEST_PRÉNOM-COMPOSÉ'), 'prenomcompose.familletest');
+  assert.equal(deriveOwnCloudUsername('FAMILLEÉXEMPLE_PRÉNOMTEST'), 'prenomtest.familleexemple');
+  assert.equal(deriveOwnCloudUsername('P_PRENOMEXEMPLE'), 'prenomexemple.p');
+});
+
+test('deriveOwnCloudUsername takes the last uppercase token as the given name and groups preceding family parts', () => {
+  assert.equal(deriveOwnCloudUsername('DE_LA_FAMILLEEXEMPLE_PRENOMTEST'), 'prenomtest.delafamilleexemple');
+  assert.equal(deriveOwnCloudUsername('DE LA FAMILLEEXEMPLE PRÉNOM-COMPOSÉ'), 'prenomcompose.delafamilleexemple');
+  assert.equal(deriveOwnCloudUsername('D_EXEMPLE_PRENOMTEST'), 'prenomtest.dexemple');
+});
+
 test('deriveOwnCloudUsername joins distinguishable multiword family names in either order', () => {
   assert.equal(deriveOwnCloudUsername('DE_LA_FAMILLEEXEMPLE_Prénomtest'), 'prenomtest.delafamilleexemple');
   assert.equal(deriveOwnCloudUsername('Prénomtest_DE_LA_FAMILLEEXEMPLE'), 'prenomtest.delafamilleexemple');
@@ -64,18 +77,19 @@ test('deriveOwnCloudUsername preserves existing dotted identifiers regardless of
   assert.equal(deriveOwnCloudUsername('prenomexemple.familleexemple'), 'prenomexemple.familleexemple');
   assert.equal(deriveOwnCloudUsername('FAMILLEEXEMPLE.Prénomexemple'), 'familleexemple.prenomexemple');
   assert.equal(deriveOwnCloudUsername('Prénomexemple.FAMILLEEXEMPLE'), 'prenomexemple.familleexemple');
+  assert.equal(deriveOwnCloudUsername('PRENOMEXEMPLE.FAMILLEEXEMPLE'), 'prenomexemple.familleexemple');
+  assert.equal(deriveOwnCloudUsername('FAMILLEEXEMPLE.PRENOMEXEMPLE'), 'familleexemple.prenomexemple');
   assert.equal(deriveOwnCloudUsername('  __Prénomexemple..Familleexemple__  '), 'prenomexemple.familleexemple');
 });
 
-test('deriveOwnCloudUsername keeps source order when capitalization does not distinguish the family name', () => {
+test('deriveOwnCloudUsername keeps ambiguous title-case and lowercase names in source order', () => {
   assert.equal(deriveOwnCloudUsername('Familleexemple_Prénomexemple'), 'familleexemple.prenomexemple');
   assert.equal(deriveOwnCloudUsername('Prénomexemple_Familleexemple'), 'prenomexemple.familleexemple');
-  assert.equal(deriveOwnCloudUsername('FAMILLEEXEMPLE_PRENOMEXEMPLE'), 'familleexemple.prenomexemple');
   assert.equal(deriveOwnCloudUsername('familleexemple_prenomexemple'), 'familleexemple.prenomexemple');
   assert.equal(deriveOwnCloudUsername('Prénomtest_De_La_Familleexemple'), 'prenomtest.de.la.familleexemple');
 });
 
-test('deriveOwnCloudUsername does not treat a lone initial or a number as a family name', () => {
+test('deriveOwnCloudUsername does not infer a family name from mixed-case initials or numbers', () => {
   assert.equal(deriveOwnCloudUsername('P_Familleexemple'), 'p.familleexemple');
   assert.equal(deriveOwnCloudUsername('7_Prénomexemple'), '7.prenomexemple');
 });
@@ -97,6 +111,10 @@ test('SharingFolderScanner infers usernames from generated recipient directories
     ['D’EXEMPLE Prénomtest', 'prenomtest.dexemple'],
     ['Familleexemple Prénomtest', 'familleexemple.prenomtest'],
     ['prenomtest.familleexemple', 'prenomtest.familleexemple'],
+    ['FAMILLEMAJEXEMPLE PRENOMMAJEXEMPLE', 'prenommajexemple.famillemajexemple'],
+    ['FAMILLEMAJ-TEST PRÉNOMMAJ-COMPOSÉ', 'prenommajcompose.famillemajtest'],
+    ['DE LA FAMILLEMAJEXEMPLE PRENOMMAJTEST', 'prenommajtest.delafamillemajexemple'],
+    ['PRENOMMAJEXEMPLE.FAMILLEMAJEXEMPLE', 'prenommajexemple.famillemajexemple'],
   ].map(([name, username]) => [NameSanitizer.sanitize(name, 'reviewer'), username]));
   await Promise.all([...expectedUsernames.keys()].map((name) => mkdir(path.join(root, name))));
 

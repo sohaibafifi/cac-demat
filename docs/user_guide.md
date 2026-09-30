@@ -129,7 +129,9 @@ Pendant le téléversement, chaque ligne affiche le fichier en cours, le nombre 
 
 L'application détecte les sous-dossiers et propose un username ownCloud au format `prenom.nom` lorsque le nom de famille en majuscules permet de reconnaître l'ordre. Exemple fictif : `FAMILLE-EXEMPLE_Prénom-Composé` et `Prénom-Composé_FAMILLE-EXEMPLE` donnent tous deux `prenomcompose.familleexemple`. Les accents, apostrophes et tirets sont retirés. Les différentes parties d'un nom de famille en majuscules sont réunies.
 
-Le nom du dossier reste inchangé. Un identifiant déjà séparé par un point conserve son ordre. Si le nom et le prénom ne sont pas distinguables par leur casse, l'application conserve leur ordre initial : vérifiez et, si nécessaire, corrigez le username avant le partage. Il s'agit d'une suggestion modifiable, pas d'une confirmation de l'identifiant du compte ownCloud.
+Pour un dossier entièrement en majuscules, l'ordre est considéré comme **NOM_PRÉNOM**. Exemple fictif : `FAMILLE-EXEMPLE_PRÉNOM-COMPOSÉ` donne `prenomcompose.familleexemple`. Le dernier élément séparé par un espace ou un underscore est pris comme prénom ; les éléments précédents forment le nom de famille. Un prénom composé avec un tiret reste un seul élément.
+
+Le nom du dossier reste inchangé. Un identifiant déjà séparé par un point conserve son ordre. Dans les autres cas où le nom et le prénom ne sont pas distinguables par leur casse, l'application conserve leur ordre initial : vérifiez et, si nécessaire, corrigez le username avant le partage. Il s'agit d'une suggestion modifiable, pas d'une confirmation de l'identifiant du compte ownCloud.
 
 Vous pouvez :
 
