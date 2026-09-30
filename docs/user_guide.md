@@ -127,7 +127,9 @@ Pendant le téléversement, chaque ligne affiche le fichier en cours, le nombre 
 
 ### 3. Destinataires
 
-L'application détecte les sous-dossiers et propose un username ownCloud en conservant l'ordre de leur nom. Par exemple, `Pierre_Marquis` devient `pierre.marquis`. Les accents sont retirés et les tirets internes supprimés : `Jean-Pierre_Dupont` devient `jeanpierre.dupont`. Le username reste modifiable avant le partage, notamment si l'ordre du nom et du prénom dans le dossier diffère de celui de l'identifiant ownCloud.
+L'application détecte les sous-dossiers et propose un username ownCloud au format `prenom.nom` lorsque le nom de famille en majuscules permet de reconnaître l'ordre. Exemple fictif : `FAMILLE-EXEMPLE_Prénom-Composé` et `Prénom-Composé_FAMILLE-EXEMPLE` donnent tous deux `prenomcompose.familleexemple`. Les accents, apostrophes et tirets sont retirés. Les différentes parties d'un nom de famille en majuscules sont réunies.
+
+Le nom du dossier reste inchangé. Un identifiant déjà séparé par un point conserve son ordre. Si le nom et le prénom ne sont pas distinguables par leur casse, l'application conserve leur ordre initial : vérifiez et, si nécessaire, corrigez le username avant le partage. Il s'agit d'une suggestion modifiable, pas d'une confirmation de l'identifiant du compte ownCloud.
 
 Vous pouvez :
 
